@@ -89,6 +89,9 @@ itself:
    — e.g. `noise-monitor.example.com` *(placeholder — use your own)*.
 3. **HTTPS**, so browsers trust the site.
 
+> The plain `docker compose up --build` command only runs the app on port 8000
+> — it does **not** start any proxy. The Caddy proxy below is opt-in.
+
 The repo ships an optional **Caddy** reverse proxy that handles HTTPS
 automatically (free Let's Encrypt certificates). Steps:
 
@@ -124,6 +127,23 @@ Notes:
   does not itself open the app to the internet — the server + DNS + proxy do.
 - Behind a proxy the app still listens on `8000` internally; only Caddy needs
   ports `80`/`443` published to the host.
+
+### Troubleshooting
+
+**Caddy exits with `loading new config: ... no config file to load` (or
+"no config file is provided").**
+Caddy was started without a `Caddyfile`. The repo ships the template as
+`Caddyfile.example`, so you must copy it to the exact filename `Caddyfile`
+**before** bringing the proxy up:
+
+```bash
+cp Caddyfile.example Caddyfile   # exact name 'Caddyfile', in the repo root
+docker compose --profile public up --build -d
+```
+
+If you only want the app locally and are seeing a Caddy error at all, make sure
+the `caddy` service in `docker-compose.yml` is still commented out and just run
+`docker compose up --build` (no `--profile public`).
 
 ---
 
