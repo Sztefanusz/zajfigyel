@@ -1,0 +1,170 @@
+:root {
+  --bg: #f4f6f9;
+  --panel: #ffffff;
+  --panel-border: #e2e8f0;
+  --text: #1a202c;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --topbar-bg: #ffffff;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --toggle-bg: #eef2f7;
+  --toggle-active: #2563eb;
+  --toggle-active-text: #ffffff;
+}
+
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-border: #334155;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent: #60a5fa;
+  --topbar-bg: #1e293b;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --toggle-bg: #334155;
+  --toggle-active: #3b82f6;
+  --toggle-active-text: #ffffff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1.1rem;
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--panel-border);
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  flex-wrap: wrap;
+}
+
+.brand { display: flex; align-items: center; gap: 0.6rem; }
+.brand h1 { font-size: 1.1rem; margin: 0; font-weight: 650; }
+.brand-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
+.status { font-size: 0.8rem; color: var(--text-muted); }
+.source-badge {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: var(--toggle-bg);
+  color: var(--text-muted);
+}
+.source-badge.demo { background: #f59e0b22; color: #b45309; }
+.source-badge.live { background: #10b98122; color: #047857; }
+
+.toggle-group { display: inline-flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--panel-border); }
+.toggle {
+  border: none;
+  background: var(--toggle-bg);
+  color: var(--text);
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.toggle:hover { filter: brightness(0.97); }
+.lang-btn[aria-pressed="true"] { background: var(--toggle-active); color: var(--toggle-active-text); }
+.theme-btn { border-radius: 8px; border: 1px solid var(--panel-border); }
+
+.layout { flex: 1; display: flex; min-height: 0; }
+
+.sidebar {
+  width: 300px;
+  padding: 1rem;
+  overflow-y: auto;
+  background: var(--bg);
+  border-right: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  box-shadow: var(--shadow);
+}
+.panel h2 { margin: 0 0 0.6rem; font-size: 0.92rem; font-weight: 650; }
+
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.legend li { display: flex; align-items: center; gap: 0.55rem; font-size: 0.85rem; }
+.legend .swatch { width: 16px; height: 16px; border-radius: 4px; flex: none; }
+.legend .range { margin-left: auto; color: var(--text-muted); font-size: 0.78rem; }
+
+.stats { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem 0.5rem; }
+.stats div { display: flex; flex-direction: column; }
+.stats dt { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.stats dd { margin: 0.1rem 0 0; font-size: 1.15rem; font-weight: 650; }
+
+.about p { margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
+
+#map { flex: 1; min-height: 0; background: var(--bg); }
+
+/* Dark-mode tweaks for Leaflet map tiles and popups */
+[data-theme="dark"] .leaflet-tile { filter: brightness(0.82) invert(1) contrast(0.9) hue-rotate(180deg) saturate(0.7); }
+[data-theme="dark"] .leaflet-container { background: #0f172a; }
+.leaflet-popup-content-wrapper {
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+}
+.leaflet-popup-tip { background: var(--panel); }
+.popup h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+.popup table { width: 100%; font-size: 0.82rem; border-collapse: collapse; }
+.popup td { padding: 0.12rem 0; }
+.popup td:last-child { text-align: right; font-weight: 600; }
+.popup .indoor-tag { display: inline-block; margin-top: 0.4rem; font-size: 0.72rem; color: var(--text-muted); }
+
+/* Pulsing sensor markers */
+.noise-marker {
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; max-height: 42%; border-right: none; border-bottom: 1px solid var(--panel-border); }
+  .brand h1 { font-size: 1rem; }
+}

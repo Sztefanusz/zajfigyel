@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n="title">Budapest Noise Monitor</title>
+  <meta name="description" data-i18n="description"
+        content="Live noise levels across Budapest from public sensors." />
+
+  <!-- Leaflet (open-source map library) -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <h1 data-i18n="title">Budapest Noise Monitor</h1>
+    </div>
+
+    <div class="controls">
+      <div class="status" id="status">
+        <span class="status-label" data-i18n="updated">Updated</span>:
+        <span id="updated-at">—</span>
+        <span class="source-badge" id="source-badge"></span>
+      </div>
+
+      <div class="toggle-group" role="group" aria-label="Language">
+        <button class="toggle lang-btn" data-lang="en" aria-pressed="true">EN</button>
+        <button class="toggle lang-btn" data-lang="hu" aria-pressed="false">HU</button>
+      </div>
+
+      <button class="toggle theme-btn" id="theme-btn" aria-label="Toggle theme">
+        <span class="theme-icon" id="theme-icon">🌙</span>
+        <span data-i18n="theme" id="theme-label">Dark</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2 data-i18n="legendTitle">Noise level</h2>
+        <ul class="legend" id="legend"></ul>
+      </section>
+
+      <section class="panel">
+        <h2 data-i18n="statsTitle">Overview</h2>
+        <dl class="stats">
+          <div><dt data-i18n="sensorsActive">Active sensors</dt><dd id="stat-count">—</dd></div>
+          <div><dt data-i18n="avgLevel">Average level</dt><dd id="stat-avg">—</dd></div>
+          <div><dt data-i18n="maxLevel">Loudest</dt><dd id="stat-max">—</dd></div>
+          <div><dt data-i18n="minLevel">Quietest</dt><dd id="stat-min">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel about">
+        <h2 data-i18n="aboutTitle">About</h2>
+        <p data-i18n="aboutText">
+          Noise data is collected from the public Sensor.Community network and
+          filtered to the Budapest area. The map refreshes automatically.
+        </p>
+      </section>
+    </aside>
+
+    <div id="map" aria-label="Map of Budapest noise sensors"></div>
+  </main>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+services:
+  noise-monitor:
+    build: .
+    image: budapest-noise-monitor:latest
+    container_name: budapest-noise-monitor
+    ports:
+      - "8000:8000"
+    environment:
+      # How often the backend polls the public sensor network (seconds).
+      POLL_INTERVAL_SECONDS: "120"
+      # Seed demo data when no live Budapest noise sensors are reachable.
+      ENABLE_DEMO_FALLBACK: "true"
+      # Optional: override the Budapest bounding box / map centre here.
+      # BUDAPEST_MIN_LAT: "47.35"
+      # BUDAPEST_MAX_LAT: "47.61"
+      # BUDAPEST_MIN_LON: "18.92"
+      # BUDAPEST_MAX_LON: "19.33"
+    restart: unless-stopped
