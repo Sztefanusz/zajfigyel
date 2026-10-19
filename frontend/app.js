@@ -33,6 +33,7 @@
   let pollInterval = 120000;
   let defaultRadius = 5;
   let maxRadius = 50;
+  let defaultCity = "budapest";
   let map = null;
   let markerLayer = null;
   let heatLayer = null;
@@ -46,7 +47,8 @@
       const raw = localStorage.getItem(STORAGE_QUERY);
       if (raw) return JSON.parse(raw);
     } catch (_) {}
-    return { mode: "city", city: "budapest" };
+    // No saved query yet; filled from backend default_city during boot.
+    return null;
   }
   function saveQuery() {
     localStorage.setItem(STORAGE_QUERY, JSON.stringify(query));
@@ -88,6 +90,7 @@
     });
     updateThemeLabel();
     renderLegend();
+    if (cities.length) updateCityHint();
     if (lastData) render(lastData);
   }
 
@@ -349,6 +352,7 @@
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
       render(data);
+      loadCities(); // refresh per-city counts after the forced poll
       startPolling();
     } catch (err) {
       console.error("Manual refresh failed", err);
@@ -369,6 +373,7 @@
         if (cfg.poll_interval_seconds) pollInterval = cfg.poll_interval_seconds * 1000;
         if (cfg.default_radius_km) defaultRadius = cfg.default_radius_km;
         if (cfg.max_radius_km) maxRadius = cfg.max_radius_km;
+        if (cfg.default_city) defaultCity = cfg.default_city;
         return cfg;
       }
     } catch (_) {}
@@ -380,21 +385,56 @@
       const resp = await fetch("api/cities", { cache: "no-store" });
       if (resp.ok) cities = await resp.json();
     } catch (_) {}
+    renderCityOptions();
+    if (query && query.mode === "city" && query.city) {
+      document.getElementById("city-select").value = query.city;
+    }
+  }
+
+  // Build the city <option>s, including a live "sensors with data" hint.
+  // Cities are sorted so those with data appear first.
+  function renderCityOptions() {
     const sel = document.getElementById("city-select");
+    const current = sel.value || (query && query.city);
     sel.innerHTML = "";
-    cities.forEach((c) => {
+    const sorted = cities.slice().sort((a, b) => {
+      const ca = a.sensor_count || 0;
+      const cb = b.sensor_count || 0;
+      if (cb !== ca) return cb - ca; // more data first
+      return a.name.localeCompare(b.name);
+    });
+    sorted.forEach((c) => {
       const opt = document.createElement("option");
       opt.value = c.id;
-      opt.textContent = c.country ? c.name + " (" + c.country + ")" : c.name;
+      const base = c.country ? c.name + " (" + c.country + ")" : c.name;
+      const n = c.sensor_count || 0;
+      // Suffix: "• 8" when data is available, "• —" when none.
+      opt.textContent = base + "  •  " + (n > 0 ? n : "—");
+      if (n === 0) opt.classList.add("no-data-opt");
       sel.appendChild(opt);
     });
-    if (query.mode === "city" && query.city) sel.value = query.city;
+    if (current) sel.value = current;
+    updateCityHint(sorted);
+  }
+
+  // Short summary line under the dropdown: how many cities have data now.
+  function updateCityHint(list) {
+    const hint = document.getElementById("city-hint");
+    if (!hint) return;
+    const withData = (list || cities).filter((c) => (c.sensor_count || 0) > 0).length;
+    const total = (list || cities).length;
+    hint.textContent = t("cityHint")
+      .replace("{with}", String(withData))
+      .replace("{total}", String(total));
   }
 
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     const uiInterval = Math.max(30000, Math.min(pollInterval, 120000));
-    pollTimer = setInterval(() => fetchSensors(), uiInterval);
+    pollTimer = setInterval(() => {
+      fetchSensors();
+      loadCities(); // keep the per-city sensor counts fresh
+    }, uiInterval);
   }
 
   // ---- Location controls -------------------------------------------------
@@ -533,6 +573,8 @@
     applyI18n();
     wireControls();
     await loadConfig();
+    // If the user has no saved area yet, start on the backend's default city.
+    if (!query) query = { mode: "city", city: defaultCity };
     await loadCities();
     updateRadiusUI();
     await fetchSensors({ recenter: true });

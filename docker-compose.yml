@@ -9,7 +9,9 @@ services:
       # How often the backend polls the public sensor network (seconds).
       POLL_INTERVAL_SECONDS: "120"
       # City shown on first load (any id from /api/cities).
-      DEFAULT_CITY: "budapest"
+      # Berlin usually has the most active noise sensors, so the map is
+      # populated out of the box. Change to "budapest" or any other id.
+      DEFAULT_CITY: "berlin"
       # Default / maximum radius (km) for location searches.
       DEFAULT_RADIUS_KM: "5"
       MAX_RADIUS_KM: "50"

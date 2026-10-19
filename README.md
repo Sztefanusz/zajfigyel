@@ -12,7 +12,7 @@ updates automatically.
   serves the frontend.
 - **Frontend** — a lightweight vanilla‑JS single page using
   [Leaflet](https://leafletjs.com) + OpenStreetMap tiles. Features:
-  - 🏙️ **major city switcher** (Budapest, Berlin, Stuttgart, London, Paris, Amsterdam, Vienna, Sofia)
+  - 🏙️ **major city switcher** (Budapest, Berlin, Stuttgart, London, Paris, Amsterdam, Vienna, Sofia), each annotated with its **live sensor count** so you can see at a glance which cities have data right now
   - 🔎 **location search** — type any place and see sensors within a radius you control
   - 🟢🟡🔴 color‑coded noise markers (dB LAeq)
   - 🔥 **heatmap** view toggle (Markers ↔ Heatmap)
@@ -86,7 +86,7 @@ Open <http://localhost:8000>.
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/cities` | List of predefined major cities (id, name, centre, zoom, bbox) |
+| `GET /api/cities` | List of predefined major cities (id, name, centre, zoom, bbox) with each city's current `sensor_count` |
 | `GET /api/sensors?city=<id>` | Noise sensors inside a city's bounding box |
 | `GET /api/sensors?lat=<>&lon=<>&radius_km=<>` | Noise sensors within a radius of a point |
 | `POST /api/refresh?...` | Force an immediate upstream poll, then return the filtered snapshot (same query params as `/api/sensors`) |
@@ -145,7 +145,13 @@ All settings are environment variables (see `backend/app/config.py`):
 | `GEOCODER_USER_AGENT` | `noise-monitor/2.0 (public demo)` | User-Agent for geocoding (Nominatim policy) |
 | `DEFAULT_RADIUS_KM` | `5` | Default radius for location queries |
 | `MAX_RADIUS_KM` | `50` | Maximum allowed radius |
-| `DEFAULT_CITY` | `budapest` | City shown on first load |
+| `DEFAULT_CITY` | `budapest` | City shown on first load (the bundled `docker-compose.yml` overrides this to `berlin`, which usually has the most active sensors, so the map is populated out of the box) |
+
+The frontend shows the city on first load based on `DEFAULT_CITY` (via
+`/api/config`), unless you've previously selected a different area — your choice
+is remembered in the browser. The city dropdown also displays each city's live
+sensor count and a short "N of M cities have live data" hint, refreshed on every
+poll.
 
 To add more cities, extend the `CITIES` dict in `backend/app/config.py` with a
 centre, zoom, and bounding box.

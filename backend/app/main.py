@@ -123,6 +123,7 @@ async def health():
 
 @app.get("/api/cities", response_model=List[City])
 async def get_cities():
+    all_sensors, _, _ = await collector.store.get()
     return [
         City(
             id=cid,
@@ -131,6 +132,7 @@ async def get_cities():
             center=meta["center"],
             zoom=meta["zoom"],
             bbox=meta["bbox"],
+            sensor_count=len(collector.filter_bbox(all_sensors, meta["bbox"])),
         )
         for cid, meta in config.CITIES.items()
     ]

@@ -138,6 +138,8 @@ body {
   font-size: 0.85rem;
 }
 .select:focus, .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.city-hint { margin: 0.4rem 0 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; }
+.select option.no-data-opt { color: var(--text-muted); }
 .divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.8rem 0 0.2rem; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-border); }
 .search-row { display: flex; gap: 0.4rem; margin-top: 0.1rem; }

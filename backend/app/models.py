@@ -58,6 +58,8 @@ class City(BaseModel):
     center: dict
     zoom: int
     bbox: dict
+    # Number of noise sensors currently reporting inside this city's bbox.
+    sensor_count: int = 0
 
 
 class GeocodeResult(BaseModel):
