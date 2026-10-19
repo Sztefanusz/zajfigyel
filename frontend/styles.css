@@ -179,13 +179,17 @@ body {
 .map-overlay {
   position: absolute;
   inset: 0;
-  display: flex;
+  /* Hidden by default; shown only when the .is-visible class is added.
+     We do NOT rely on the [hidden] attribute here because the display rule
+     below would otherwise override the UA [hidden] { display:none } rule. */
+  display: none;
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   z-index: 500;
   pointer-events: none;
 }
+.map-overlay.is-visible { display: flex; }
 .overlay-card {
   pointer-events: auto;
   background: var(--panel);

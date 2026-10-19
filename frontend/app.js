@@ -227,6 +227,7 @@
     const title = document.getElementById("no-data-title");
     const text = document.getElementById("no-data-text");
     if (!kind) {
+      overlay.classList.remove("is-visible");
       overlay.hidden = true;
       return;
     }
@@ -238,6 +239,7 @@
       text.textContent = t("noDataText");
     }
     overlay.hidden = false;
+    overlay.classList.add("is-visible");
   }
 
   function fitToArea(area) {
