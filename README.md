@@ -78,6 +78,55 @@ Open <http://localhost:8000>.
 
 ---
 
+## Deploy to a public web address
+
+By default the app is only reachable on `localhost:8000`. To make it accessible
+**from anywhere** you need three things, none of which the code can provide by
+itself:
+
+1. **A server with a public IP** (any VPS / cloud VM running Docker).
+2. **A domain name** whose DNS `A`/`AAAA` record points at that server
+   — e.g. `noise-monitor.example.com` *(placeholder — use your own)*.
+3. **HTTPS**, so browsers trust the site.
+
+The repo ships an optional **Caddy** reverse proxy that handles HTTPS
+automatically (free Let's Encrypt certificates). Steps:
+
+```bash
+# 1. Point your DNS record at the server, e.g.:
+#      noise-monitor.example.com  ->  <your server's public IP>
+
+# 2. Create your Caddyfile from the template and set your real domain + email:
+cp Caddyfile.example Caddyfile
+#    edit Caddyfile: replace "noise-monitor.example.com" and "admin@example.com"
+
+# 3. Uncomment the `caddy` service (and its volumes) in docker-compose.yml.
+
+# 4. (Optional) set the canonical address so /api/config advertises it:
+#    in docker-compose.yml, set  PUBLIC_BASE_URL: "https://noise-monitor.example.com"
+
+# 5. Launch with the public proxy profile:
+docker compose --profile public up --build -d
+```
+
+Your instance is then available at:
+
+```
+https://noise-monitor.example.com      ←  example placeholder; use your domain
+```
+
+Notes:
+- **Every address above is a placeholder.** Substitute the domain and email you
+  actually control — the project does not ship or assume any real host.
+- Without a domain you can still test the proxy locally over plain HTTP by using
+  the `:80` block in `Caddyfile.example` and browsing to `http://localhost`.
+- `PUBLIC_BASE_URL` is purely informational (surfaced via `GET /api/config`); it
+  does not itself open the app to the internet — the server + DNS + proxy do.
+- Behind a proxy the app still listens on `8000` internally; only Caddy needs
+  ports `80`/`443` published to the host.
+
+---
+
 ## How it works
 
 ```
@@ -125,7 +174,7 @@ Open <http://localhost:8000>.
 | `GET /api/sources` | Transparency: every data source the site fetches + a plain explanation of the prediction model |
 | `GET /api/history_status` | Row counts in the history DB + loop interval |
 | `GET /api/health` | Health check + worldwide sensor count + upstream status |
-| `GET /api/config` | Default city, default/max radius, poll interval, past/future windows |
+| `GET /api/config` | Default city, default/max radius, poll interval, past/future windows, public base URL |
 
 Example `GET /api/sensors?lat=47.4979&lon=19.0402&radius_km=5`:
 
@@ -184,6 +233,7 @@ All settings are environment variables (see `backend/app/config.py`):
 | `PAST_WINDOW_HOURS` / `FUTURE_WINDOW_HOURS` | `24` / `24` | Span of the time-travel slider |
 | `DB_PATH` | `backend/data/noise.db` | SQLite history database path (a Docker volume persists it) |
 | `NEWS_USER_AGENT` | `noise-monitor/3.0 (public demo)` | User-Agent for fetching news RSS feeds |
+| `PUBLIC_BASE_URL` | `""` (empty) | Canonical public address (e.g. `https://noise-monitor.example.com`), surfaced via `/api/config`. Informational only — see [Deploy to a public web address](#deploy-to-a-public-web-address) |
 
 The frontend shows the city on first load based on `DEFAULT_CITY` (via
 `/api/config`), unless you've previously selected a different area — your choice

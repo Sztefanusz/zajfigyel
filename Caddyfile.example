@@ -1,0 +1,41 @@
+# Example Caddy reverse-proxy config for serving Noise Monitor on a public
+# web address with automatic HTTPS (Let's Encrypt).
+#
+# USAGE
+#   1. Copy this file to "Caddyfile" (same directory):
+#        cp Caddyfile.example Caddyfile
+#   2. Replace the placeholder domain and email below with your own.
+#   3. Make sure your domain's DNS A/AAAA record points at this server, and
+#      that ports 80 and 443 are open.
+#   4. Uncomment the `caddy` service in docker-compose.yml, then:
+#        docker compose --profile public up --build -d
+#   5. Visit https://<your-domain> — Caddy obtains the certificate on first hit.
+#
+# Everything here is a PLACEHOLDER. Substitute your real values.
+
+# --- Replace this with your real domain -------------------------------------
+noise-monitor.example.com {
+    # --- Replace with your real email (used by Let's Encrypt for notices) ---
+    tls admin@example.com
+
+    # Forward all traffic to the app container (service name + internal port).
+    reverse_proxy noise-monitor:8000
+
+    encode gzip zstd
+
+    # A few sensible security headers.
+    header {
+        Strict-Transport-Security "max-age=31536000;"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Local testing (no real domain / no HTTPS): comment out the block above and
+# uncomment the one below, then browse to http://localhost
+# ----------------------------------------------------------------------------
+# :80 {
+#     reverse_proxy noise-monitor:8000
+#     encode gzip zstd
+# }

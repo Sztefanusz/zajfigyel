@@ -41,6 +41,13 @@ MAX_RADIUS_KM = _get_float("MAX_RADIUS_KM", 50.0)
 # Default city shown on first load.
 DEFAULT_CITY = os.environ.get("DEFAULT_CITY", "budapest")
 
+# Public base URL where this instance is reachable from the internet, e.g.
+# "https://noise-monitor.example.com". Purely informational: it is surfaced
+# through /api/config so tooling/monitors know the canonical address. Leave it
+# empty for a local-only deployment. This does NOT make the app public on its
+# own — see the deployment section of the README for the reverse proxy setup.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "")
+
 # --------------------------------------------------------------------------- #
 # Historical database + background aggregation loop
 # --------------------------------------------------------------------------- #

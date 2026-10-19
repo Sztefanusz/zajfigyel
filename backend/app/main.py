@@ -209,6 +209,8 @@ async def get_config():
         "poll_interval_seconds": config.POLL_INTERVAL_SECONDS,
         "past_window_hours": config.PAST_WINDOW_HOURS,
         "future_window_hours": config.FUTURE_WINDOW_HOURS,
+        # Canonical public address, if configured (empty for local-only).
+        "public_base_url": config.PUBLIC_BASE_URL,
     }
 
 

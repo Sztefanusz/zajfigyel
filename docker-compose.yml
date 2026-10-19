@@ -26,9 +26,45 @@ services:
       FUTURE_WINDOW_HOURS: "24"
       # SQLite history DB lives here; persisted via the volume below.
       DB_PATH: "/app/data/noise.db"
+      # Canonical public address once deployed behind a domain + HTTPS.
+      # Placeholder — replace with your own host, or leave empty for local use.
+      # PUBLIC_BASE_URL: "https://noise-monitor.example.com"
     volumes:
       - noise-data:/app/data
     restart: unless-stopped
 
+# ----------------------------------------------------------------------------
+# Making it reachable "from anywhere"
+# ----------------------------------------------------------------------------
+# The service above listens on port 8000 on the host. To expose it on a public
+# web address you need (a) a server with a public IP, (b) a domain pointing at
+# it, and (c) HTTPS. The optional Caddy reverse proxy below does (c) for you
+# with automatic Let's Encrypt certificates.
+#
+# To enable it:
+#   1. Point a DNS A/AAAA record (e.g. noise-monitor.example.com) at the server.
+#   2. Edit Caddyfile.example -> copy to "Caddyfile" and set your real domain.
+#   3. Run:  docker compose --profile public up --build -d
+#   4. Browse to https://your-domain  (Caddy fetches the certificate on first hit).
+#
+# All addresses here are placeholders — substitute your own.
+#
+#  caddy:
+#    image: caddy:2
+#    container_name: noise-monitor-proxy
+#    profiles: ["public"]        # only starts with: --profile public
+#    depends_on:
+#      - noise-monitor
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    volumes:
+#      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+#      - caddy-data:/data
+#      - caddy-config:/config
+#    restart: unless-stopped
+
 volumes:
   noise-data:
+  # caddy-data:
+  # caddy-config:
