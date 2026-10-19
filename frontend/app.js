@@ -2,7 +2,6 @@
   "use strict";
 
   // ---- Noise level color scale (dB, A-weighted LAeq) --------------------
-  // Buckets chosen to reflect perceived urban loudness.
   const SCALE = [
     { max: 45, color: "#2ecc71", key: "legendQuiet", range: "< 45 dB" },
     { max: 55, color: "#a3d900", key: "legendModerate", range: "45–55" },
@@ -20,19 +19,38 @@
   // ---- State ------------------------------------------------------------
   const STORAGE_LANG = "noise.lang";
   const STORAGE_THEME = "noise.theme";
-
   const STORAGE_VIEW = "noise.view";
+  const STORAGE_QUERY = "noise.query";
 
   let lang = localStorage.getItem(STORAGE_LANG) || detectLang();
   let theme = localStorage.getItem(STORAGE_THEME) || detectTheme();
   let view = localStorage.getItem(STORAGE_VIEW) || "markers"; // "markers" | "heatmap"
+
+  // The active area query. Either a city id, or a lat/lon + radius.
+  let query = loadQuery();
+
   let pollTimer = null;
-  let pollInterval = 120000; // overwritten by /api/config
+  let pollInterval = 120000;
+  let defaultRadius = 5;
+  let maxRadius = 50;
   let map = null;
   let markerLayer = null;
   let heatLayer = null;
+  let radiusLayer = null; // circle + centre marker for radius queries
   let lastData = null;
   let isRefreshing = false;
+  let cities = [];
+
+  function loadQuery() {
+    try {
+      const raw = localStorage.getItem(STORAGE_QUERY);
+      if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    return { mode: "city", city: "budapest" };
+  }
+  function saveQuery() {
+    localStorage.setItem(STORAGE_QUERY, JSON.stringify(query));
+  }
 
   function detectLang() {
     const n = (navigator.language || "en").toLowerCase();
@@ -58,12 +76,19 @@
       if (el.hasAttribute("content")) el.setAttribute("content", val);
       else el.textContent = val;
     });
+    // Attribute translations, e.g. data-i18n-attr="placeholder:searchPlaceholder"
+    document.querySelectorAll("[data-i18n-attr]").forEach((el) => {
+      el.getAttribute("data-i18n-attr").split(",").forEach((pair) => {
+        const [attr, key] = pair.split(":");
+        if (attr && key) el.setAttribute(attr.trim(), t(key.trim()));
+      });
+    });
     document.querySelectorAll(".lang-btn").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
     });
     updateThemeLabel();
     renderLegend();
-    if (lastData) render(lastData); // re-render popups/stats in new language
+    if (lastData) render(lastData);
   }
 
   // ---- Theme ------------------------------------------------------------
@@ -98,19 +123,19 @@
   }
 
   // ---- Map --------------------------------------------------------------
-  function initMap(center) {
-    map = L.map("map", { zoomControl: true }).setView([center.lat, center.lon], 12);
+  function initMap(center, zoom) {
+    map = L.map("map", { zoomControl: true }).setView([center.lat, center.lon], zoom || 12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
+      attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
     markerLayer = L.layerGroup();
+    radiusLayer = L.layerGroup().addTo(map);
     heatLayer = L.heatLayer([], {
       radius: 38,
       blur: 28,
       maxZoom: 15,
       minOpacity: 0.35,
-      // Gradient aligned with the noise color scale (quiet → very loud).
       gradient: {
         0.0: "#2ecc71",
         0.35: "#a3d900",
@@ -122,7 +147,6 @@
     applyViewLayer();
   }
 
-  // Swap which layer is on the map based on the current view mode.
   function applyViewLayer() {
     if (!map) return;
     if (view === "heatmap") {
@@ -137,8 +161,6 @@
     });
   }
 
-  // Map a dB value to a 0..1 intensity for the heatmap gradient.
-  // 35 dB (very quiet) -> 0, 85 dB (very loud) -> 1.
   function heatIntensity(db) {
     if (db == null || isNaN(db)) return 0.4;
     const clamped = Math.max(35, Math.min(85, db));
@@ -166,6 +188,8 @@
       "<tr><td>" + t("popupLaeq") + "</td><td>" + fmt(s.noise_laeq) + "</td></tr>" +
       "<tr><td>" + t("popupMax") + "</td><td>" + fmt(s.noise_la_max) + "</td></tr>" +
       "<tr><td>" + t("popupMin") + "</td><td>" + fmt(s.noise_la_min) + "</td></tr>";
+    if (s.distance_km != null)
+      html += "<tr><td>" + t("popupDistance") + "</td><td>" + s.distance_km.toFixed(2) + " km</td></tr>";
     if (s.timestamp)
       html += "<tr><td>" + t("popupTime") + "</td><td>" + s.timestamp.replace("T", " ").slice(0, 19) + "</td></tr>";
     html += "</table>";
@@ -174,9 +198,70 @@
     return html;
   }
 
-  function render(data) {
+  // Draw the radius circle + centre pin for a radius query (cleared otherwise).
+  function renderRadiusArea(area) {
+    if (!radiusLayer) return;
+    radiusLayer.clearLayers();
+    if (area && area.mode === "radius" && area.center) {
+      L.circle([area.center.lat, area.center.lon], {
+        radius: (area.radius_km || defaultRadius) * 1000,
+        color: "#2563eb",
+        weight: 1.5,
+        fillColor: "#2563eb",
+        fillOpacity: 0.06,
+      }).addTo(radiusLayer);
+      L.circleMarker([area.center.lat, area.center.lon], {
+        radius: 5,
+        color: "#2563eb",
+        fillColor: "#2563eb",
+        fillOpacity: 1,
+      }).addTo(radiusLayer);
+    }
+  }
+
+  function showOverlay(kind) {
+    const overlay = document.getElementById("no-data-overlay");
+    const title = document.getElementById("no-data-title");
+    const text = document.getElementById("no-data-text");
+    if (!kind) {
+      overlay.hidden = true;
+      return;
+    }
+    if (kind === "upstream") {
+      title.textContent = t("upstreamDownTitle");
+      text.textContent = t("upstreamDownText");
+    } else {
+      title.textContent = t("noDataTitle");
+      text.textContent = t("noDataText");
+    }
+    overlay.hidden = false;
+  }
+
+  function fitToArea(area) {
+    if (!map || !area) return;
+    if (area.mode === "radius" && area.center) {
+      // Fit the circle bounds so the whole radius is visible.
+      const r = (area.radius_km || defaultRadius) * 1000;
+      const circle = L.circle([area.center.lat, area.center.lon], { radius: r });
+      map.fitBounds(circle.getBounds(), { padding: [30, 30] });
+    } else if (area.bbox) {
+      map.fitBounds(
+        [
+          [area.bbox.min_lat, area.bbox.min_lon],
+          [area.bbox.max_lat, area.bbox.max_lon],
+        ],
+        { padding: [20, 20] }
+      );
+    } else if (area.center) {
+      map.setView([area.center.lat, area.center.lon], area.zoom || 12);
+    }
+  }
+
+  // ---- Rendering --------------------------------------------------------
+  function render(data, opts) {
     lastData = data;
-    if (!map) initMap(data.center || { lat: 47.4979, lon: 19.0402 });
+    const area = data.area || { mode: "city", center: { lat: 47.4979, lon: 19.0402 } };
+    if (!map) initMap(area.center, area.zoom);
 
     markerLayer.clearLayers();
     const levels = [];
@@ -189,6 +274,9 @@
       if (s.noise_laeq != null && !isNaN(s.noise_laeq)) levels.push(s.noise_laeq);
     });
     if (heatLayer) heatLayer.setLatLngs(heatPoints);
+    renderRadiusArea(area);
+
+    if (opts && opts.recenter) fitToArea(area);
 
     // Stats
     document.getElementById("stat-count").textContent = data.count ?? (data.sensors || []).length;
@@ -210,45 +298,57 @@
       ? new Date(data.updated_at).toLocaleTimeString(lang === "hu" ? "hu-HU" : "en-GB")
       : t("never");
     const badge = document.getElementById("source-badge");
-    if (data.source === "demo") {
-      badge.textContent = t("sourceDemo");
-      badge.className = "source-badge demo";
+    badge.textContent = t("sourceLive");
+    badge.className = "source-badge live";
+
+    // No-data / upstream handling. We never fabricate data: if the area has
+    // zero sensors we tell the user plainly.
+    if (data.count === 0) {
+      showOverlay(data.upstream_ok ? "nodata" : "upstream");
     } else {
-      badge.textContent = t("sourceLive");
-      badge.className = "source-badge live";
+      showOverlay(null);
     }
+  }
+
+  // ---- Query string builder ---------------------------------------------
+  function buildParams() {
+    const p = new URLSearchParams();
+    if (query.mode === "radius" && query.lat != null && query.lon != null) {
+      p.set("lat", query.lat);
+      p.set("lon", query.lon);
+      p.set("radius_km", query.radius || defaultRadius);
+    } else {
+      p.set("city", query.city || "budapest");
+    }
+    return p.toString();
   }
 
   // ---- Data fetching ----------------------------------------------------
-  async function fetchSensors() {
+  async function fetchSensors(opts) {
     try {
-      const resp = await fetch("api/sensors", { cache: "no-store" });
+      const resp = await fetch("api/sensors?" + buildParams(), { cache: "no-store" });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
-      render(data);
+      render(data, opts);
     } catch (err) {
       console.error("Failed to load sensors", err);
-      const updated = document.getElementById("updated-at");
-      updated.textContent = t("loadError");
+      document.getElementById("updated-at").textContent = t("loadError");
     }
   }
 
-  // Manual refresh: ask the backend to poll upstream right now, then render.
   async function manualRefresh() {
     if (isRefreshing) return;
     isRefreshing = true;
     const btn = document.getElementById("refresh-btn");
     const label = document.getElementById("refresh-label");
-    const prevLabel = label.textContent;
     btn.classList.add("spinning");
     btn.disabled = true;
     label.textContent = t("refreshing");
     try {
-      const resp = await fetch("api/refresh", { method: "POST", cache: "no-store" });
+      const resp = await fetch("api/refresh?" + buildParams(), { method: "POST", cache: "no-store" });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
       render(data);
-      // Restart the auto-poll timer so the next tick is a full interval away.
       startPolling();
     } catch (err) {
       console.error("Manual refresh failed", err);
@@ -267,17 +367,119 @@
       if (resp.ok) {
         const cfg = await resp.json();
         if (cfg.poll_interval_seconds) pollInterval = cfg.poll_interval_seconds * 1000;
+        if (cfg.default_radius_km) defaultRadius = cfg.default_radius_km;
+        if (cfg.max_radius_km) maxRadius = cfg.max_radius_km;
         return cfg;
       }
     } catch (_) {}
     return null;
   }
 
+  async function loadCities() {
+    try {
+      const resp = await fetch("api/cities", { cache: "no-store" });
+      if (resp.ok) cities = await resp.json();
+    } catch (_) {}
+    const sel = document.getElementById("city-select");
+    sel.innerHTML = "";
+    cities.forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.country ? c.name + " (" + c.country + ")" : c.name;
+      sel.appendChild(opt);
+    });
+    if (query.mode === "city" && query.city) sel.value = query.city;
+  }
+
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    // Refresh a bit more often than the backend polls so the UI stays fresh.
     const uiInterval = Math.max(30000, Math.min(pollInterval, 120000));
-    pollTimer = setInterval(fetchSensors, uiInterval);
+    pollTimer = setInterval(() => fetchSensors(), uiInterval);
+  }
+
+  // ---- Location controls -------------------------------------------------
+  function updateRadiusUI() {
+    const row = document.getElementById("radius-row");
+    const range = document.getElementById("radius-range");
+    const value = document.getElementById("radius-value");
+    range.max = String(maxRadius);
+    const r = query.mode === "radius" ? (query.radius || defaultRadius) : defaultRadius;
+    range.value = String(r);
+    value.textContent = String(r);
+    row.hidden = query.mode !== "radius";
+  }
+
+  async function selectCity(cityId) {
+    query = { mode: "city", city: cityId };
+    saveQuery();
+    updateRadiusUI();
+    clearGeoResults();
+    await fetchSensors({ recenter: true });
+  }
+
+  async function selectLocation(lat, lon, label) {
+    query = {
+      mode: "radius",
+      lat: Number(lat),
+      lon: Number(lon),
+      radius: query.radius || defaultRadius,
+      label: label || null,
+    };
+    saveQuery();
+    updateRadiusUI();
+    clearGeoResults();
+    await fetchSensors({ recenter: true });
+  }
+
+  function clearGeoResults() {
+    const ul = document.getElementById("geo-results");
+    ul.innerHTML = "";
+    ul.hidden = true;
+  }
+
+  function renderGeoResults(rows) {
+    const ul = document.getElementById("geo-results");
+    ul.innerHTML = "";
+    if (!rows || rows.length === 0) {
+      const li = document.createElement("li");
+      li.className = "info";
+      li.textContent = t("geoNoResults");
+      ul.appendChild(li);
+      ul.hidden = false;
+      return;
+    }
+    rows.forEach((r) => {
+      const li = document.createElement("li");
+      li.textContent = r.display_name;
+      li.addEventListener("click", () => selectLocation(r.lat, r.lon, r.display_name));
+      ul.appendChild(li);
+    });
+    ul.hidden = false;
+  }
+
+  async function doSearch(evt) {
+    if (evt) evt.preventDefault();
+    const input = document.getElementById("location-input");
+    const btn = document.getElementById("search-btn");
+    const q = input.value.trim();
+    if (!q) return;
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = t("searching");
+    try {
+      const resp = await fetch("api/geocode?q=" + encodeURIComponent(q), { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const rows = await resp.json();
+      renderGeoResults(rows);
+    } catch (err) {
+      console.error("Geocode failed", err);
+      const ul = document.getElementById("geo-results");
+      ul.innerHTML = '<li class="info">' + t("geoError") + "</li>";
+      ul.hidden = false;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
   }
 
   // ---- Event wiring -----------------------------------------------------
@@ -302,7 +504,24 @@
         applyViewLayer();
       });
     });
-    // Refresh when the tab becomes visible again.
+
+    document.getElementById("city-select").addEventListener("change", (e) => {
+      selectCity(e.target.value);
+    });
+    document.getElementById("search-form").addEventListener("submit", doSearch);
+
+    const range = document.getElementById("radius-range");
+    range.addEventListener("input", (e) => {
+      document.getElementById("radius-value").textContent = e.target.value;
+    });
+    range.addEventListener("change", (e) => {
+      if (query.mode === "radius") {
+        query.radius = Number(e.target.value);
+        saveQuery();
+        fetchSensors({ recenter: true });
+      }
+    });
+
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) fetchSensors();
     });
@@ -313,9 +532,10 @@
     applyTheme();
     applyI18n();
     wireControls();
-    const cfg = await loadConfig();
-    if (cfg && cfg.center && !map) initMap(cfg.center);
-    await fetchSensors();
+    await loadConfig();
+    await loadCities();
+    updateRadiusUI();
+    await fetchSensors({ recenter: true });
     startPolling();
   }
 

@@ -126,6 +126,78 @@ body {
 }
 .panel h2 { margin: 0 0 0.6rem; font-size: 0.92rem; font-weight: 650; }
 
+/* Location controls */
+.field-label { display: block; font-size: 0.75rem; color: var(--text-muted); margin: 0.5rem 0 0.25rem; font-weight: 600; }
+.select, .input {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.select:focus, .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.8rem 0 0.2rem; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-border); }
+.search-row { display: flex; gap: 0.4rem; margin-top: 0.1rem; }
+.search-row .input { flex: 1; }
+.btn-primary {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-primary:disabled { opacity: 0.6; cursor: progress; }
+
+.geo-results { list-style: none; margin: 0.5rem 0 0; padding: 0; border: 1px solid var(--panel-border); border-radius: 8px; overflow: hidden; }
+.geo-results li {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--panel-border);
+  line-height: 1.3;
+}
+.geo-results li:last-child { border-bottom: none; }
+.geo-results li:hover { background: var(--toggle-bg); }
+.geo-results li.info { cursor: default; color: var(--text-muted); }
+.geo-results li.info:hover { background: transparent; }
+
+.radius-row { margin-top: 0.8rem; }
+.range { width: 100%; accent-color: var(--accent); }
+
+/* No-data / upstream-down overlay */
+.map-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  z-index: 500;
+  pointer-events: none;
+}
+.overlay-card {
+  pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 1.5rem 1.8rem;
+  text-align: center;
+  max-width: 340px;
+}
+.overlay-icon { font-size: 2.2rem; display: block; margin-bottom: 0.4rem; }
+.overlay-title { margin: 0 0 0.35rem; font-size: 1.05rem; font-weight: 650; }
+.overlay-text { margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; }
+
 .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
 .legend li { display: flex; align-items: center; gap: 0.55rem; font-size: 0.85rem; }
 .legend .swatch { width: 16px; height: 16px; border-radius: 4px; flex: none; }
@@ -138,7 +210,7 @@ body {
 
 .about p { margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
 
-#map { flex: 1; min-height: 0; background: var(--bg); }
+#map { flex: 1; min-height: 0; width: 100%; background: var(--bg); }
 
 /* Dark-mode tweaks for Leaflet map tiles and popups */
 [data-theme="dark"] .leaflet-tile { filter: brightness(0.82) invert(1) contrast(0.9) hue-rotate(180deg) saturate(0.7); }

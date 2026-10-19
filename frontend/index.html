@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title data-i18n="title">Budapest Noise Monitor</title>
+  <title data-i18n="title">Noise Monitor</title>
   <meta name="description" data-i18n="description"
-        content="Live noise levels across Budapest from public sensors." />
+        content="Live noise levels from public sensors." />
 
   <!-- Leaflet (open-source map library) -->
   <link rel="stylesheet"
@@ -24,7 +24,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="brand-dot" aria-hidden="true"></span>
-      <h1 data-i18n="title">Budapest Noise Monitor</h1>
+      <h1 data-i18n="title">Noise Monitor</h1>
     </div>
 
     <div class="controls">
@@ -60,6 +60,33 @@
 
   <main class="layout">
     <aside class="sidebar">
+      <!-- Location controls -->
+      <section class="panel">
+        <h2 data-i18n="locationTitle">Location</h2>
+
+        <label class="field-label" for="city-select" data-i18n="cityLabel">Major city</label>
+        <select id="city-select" class="select"></select>
+
+        <div class="divider"><span data-i18n="orLabel">or</span></div>
+
+        <label class="field-label" for="location-input" data-i18n="searchLabel">Search a location</label>
+        <form id="search-form" class="search-row" autocomplete="off">
+          <input id="location-input" class="input" type="text"
+                 data-i18n-attr="placeholder:searchPlaceholder"
+                 placeholder="e.g. Keleti, Budapest" />
+          <button type="submit" class="btn-primary" id="search-btn" data-i18n="searchBtn">Search</button>
+        </form>
+        <ul class="geo-results" id="geo-results" hidden></ul>
+
+        <div class="radius-row" id="radius-row" hidden>
+          <label class="field-label" for="radius-range">
+            <span data-i18n="radiusLabel">Radius</span>:
+            <span id="radius-value">5</span> <span data-i18n="km">km</span>
+          </label>
+          <input id="radius-range" class="range" type="range" min="1" max="50" step="1" value="5" />
+        </div>
+      </section>
+
       <section class="panel">
         <h2 data-i18n="legendTitle">Noise level</h2>
         <ul class="legend" id="legend"></ul>
@@ -78,13 +105,26 @@
       <section class="panel about">
         <h2 data-i18n="aboutTitle">About</h2>
         <p data-i18n="aboutText">
-          Noise data is collected from the public Sensor.Community network and
-          filtered to the Budapest area. The map refreshes automatically.
+          Noise data is collected from the public Sensor.Community network. Pick
+          a major city or search for any location to see nearby sensors. The map
+          refreshes automatically.
         </p>
       </section>
     </aside>
 
-    <div id="map" aria-label="Map of Budapest noise sensors"></div>
+    <div class="map-wrap">
+      <div id="map" aria-label="Map of noise sensors"></div>
+      <!-- Shown when there is no sensor data for the selected area -->
+      <div class="map-overlay" id="no-data-overlay" hidden>
+        <div class="overlay-card">
+          <span class="overlay-icon" aria-hidden="true">📡</span>
+          <p class="overlay-title" id="no-data-title" data-i18n="noDataTitle">No data available</p>
+          <p class="overlay-text" id="no-data-text" data-i18n="noDataText">
+            No public noise sensors are reporting for this area right now.
+          </p>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script src="i18n.js"></script>

@@ -1,18 +1,18 @@
 services:
   noise-monitor:
     build: .
-    image: budapest-noise-monitor:latest
-    container_name: budapest-noise-monitor
+    image: noise-monitor:latest
+    container_name: noise-monitor
     ports:
       - "8000:8000"
     environment:
       # How often the backend polls the public sensor network (seconds).
       POLL_INTERVAL_SECONDS: "120"
-      # Seed demo data when no live Budapest noise sensors are reachable.
-      ENABLE_DEMO_FALLBACK: "true"
-      # Optional: override the Budapest bounding box / map centre here.
-      # BUDAPEST_MIN_LAT: "47.35"
-      # BUDAPEST_MAX_LAT: "47.61"
-      # BUDAPEST_MIN_LON: "18.92"
-      # BUDAPEST_MAX_LON: "19.33"
+      # City shown on first load (any id from /api/cities).
+      DEFAULT_CITY: "budapest"
+      # Default / maximum radius (km) for location searches.
+      DEFAULT_RADIUS_KM: "5"
+      MAX_RADIUS_KM: "50"
+      # Identify this app to the geocoder (OpenStreetMap Nominatim policy).
+      GEOCODER_USER_AGENT: "noise-monitor/2.0 (self-hosted)"
     restart: unless-stopped

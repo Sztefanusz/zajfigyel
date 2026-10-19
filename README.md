@@ -1,18 +1,23 @@
-# Budapest Noise Monitor 🔊🗺️
+# Noise Monitor 🔊🗺️
 
-A small web app that collects **publicly available noise sensor data** for
-Budapest and visualises the current noise levels on an interactive map that
+A web app that collects **publicly available noise sensor data** and visualises
+current noise levels on an interactive map. Switch between major cities or
+search for **any location** to see the sensors within a chosen radius. The map
 updates automatically.
 
 - **Backend** — Python / FastAPI service that polls the public
-  [Sensor.Community](https://sensor.community) network, filters readings down to
-  noise sensors inside the Budapest bounding box, and exposes them through a
-  clean JSON API. It also serves the frontend.
+  [Sensor.Community](https://sensor.community) network, keeps every worldwide
+  noise sensor reading in memory, and filters it per request by either a city
+  bounding box or a location + radius. It also geocodes free-text locations and
+  serves the frontend.
 - **Frontend** — a lightweight vanilla‑JS single page using
   [Leaflet](https://leafletjs.com) + OpenStreetMap tiles. Features:
-  - 🟢🟡🔴 color‑coded noise markers (dB LAeq) on a map of Budapest
+  - 🏙️ **major city switcher** (Budapest, Berlin, Stuttgart, London, Paris, Amsterdam, Vienna, Sofia)
+  - 🔎 **location search** — type any place and see sensors within a radius you control
+  - 🟢🟡🔴 color‑coded noise markers (dB LAeq)
   - 🔥 **heatmap** view toggle (Markers ↔ Heatmap)
   - ♻️ **auto‑refreshing** map plus a manual **Refresh** button
+  - 🚫 honest **"No data available"** state — the app never fabricates data
   - 🌍 **English / Hungarian** language switch
   - 🌙 **Light / Dark** theme toggle
   - 📊 live overview stats (active sensors, average / loudest / quietest)
@@ -47,50 +52,62 @@ Open <http://localhost:8000>.
 ## How it works
 
 ```
- Sensor.Community public API            FastAPI backend                 Browser
- (data.sensor.community)      poll      ┌──────────────┐    /api/sensors ┌────────────┐
-  all sensors worldwide  ───────────►   │  collector    │ ──────────────► │  Leaflet    │
-                                        │  (bbox + noise │                │  map, EN/HU │
-                                        │   filtering)   │                │  light/dark │
-                                        └──────────────┘                 └────────────┘
+ Sensor.Community public API          FastAPI backend                    Browser
+ (data.sensor.community)     poll     ┌───────────────────┐  /api/*       ┌───────────────┐
+  all sensors worldwide ───────────►  │  collector         │ ───────────► │  Leaflet map   │
+                                      │  (keeps ALL noise   │              │  city switcher │
+ Nominatim geocoder  ◄──────────────  │   sensors in mem.)  │              │  location/radius│
+                                      │  filter: bbox|radius│              │  EN/HU, themes │
+                                      └───────────────────┘              └───────────────┘
 ```
 
 1. The backend polls the upstream endpoint every `POLL_INTERVAL_SECONDS`
    (default 120s). The payload is the last ~5‑minute average for **every**
    sensor worldwide.
-2. The collector keeps only entries that are **inside the Budapest bounding
-   box** *and* carry `noise_*` values (`noise_LAeq`, `noise_LA_max`,
-   `noise_LA_min`), keeping the most recent reading per sensor.
-3. The result is cached in memory and served at `/api/sensors`.
-4. The frontend fetches that endpoint on load and on a timer, re‑drawing the
-   map markers automatically.
+2. The collector keeps every entry carrying `noise_*` values
+   (`noise_LAeq`, `noise_LA_max`, `noise_LA_min`) — worldwide — keeping the most
+   recent reading per sensor.
+3. Each request filters that snapshot:
+   - **City mode** (`?city=budapest`) → sensors inside the city bounding box.
+   - **Radius mode** (`?lat=..&lon=..&radius_km=..`) → sensors within the given
+     radius of a point, annotated with their distance and sorted nearest-first.
+4. The frontend fetches on load, on a timer, and whenever you change the city,
+   location, or radius — re‑drawing the markers/heatmap automatically.
 
-> **Note on live data:** Sensor.Community noise sensors are community‑operated,
-> so the number reporting inside Budapest at any given moment varies and can be
-> zero. When no live Budapest noise sensors are available, the backend serves a
-> small **demo dataset** so the map is never empty (indicated by a `demo data`
-> badge in the header). Set `ENABLE_DEMO_FALLBACK=false` to disable this.
+> **No fabricated data.** Sensor.Community noise sensors are community‑operated,
+> so the number reporting in a given area varies and can be zero. When no
+> sensors match the selected area, the app shows a clear **"No data available"**
+> message instead of filling in demo data. If the upstream source itself cannot
+> be reached, a **"Data source unavailable"** message is shown.
 
 ---
 
 ## API
 
-| Endpoint        | Description                                             |
-|-----------------|---------------------------------------------------------|
-| `GET /api/sensors` | Current Budapest noise sensors (JSON, see below)     |
-| `POST /api/refresh` | Force an immediate upstream poll, then return the fresh snapshot (same shape as `/api/sensors`). Backs the manual **Refresh** button. |
-| `GET /api/health`  | Health check + sensor count + data source            |
-| `GET /api/config`  | Map centre + poll interval for the frontend          |
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/cities` | List of predefined major cities (id, name, centre, zoom, bbox) |
+| `GET /api/sensors?city=<id>` | Noise sensors inside a city's bounding box |
+| `GET /api/sensors?lat=<>&lon=<>&radius_km=<>` | Noise sensors within a radius of a point |
+| `POST /api/refresh?...` | Force an immediate upstream poll, then return the filtered snapshot (same query params as `/api/sensors`) |
+| `GET /api/geocode?q=<text>` | Geocode a free-text location via OpenStreetMap Nominatim |
+| `GET /api/health` | Health check + worldwide sensor count + upstream status |
+| `GET /api/config` | Default city, default/max radius, poll interval |
 
-Example `GET /api/sensors`:
+Example `GET /api/sensors?lat=47.4979&lon=19.0402&radius_km=5`:
 
 ```json
 {
   "updated_at": "2026-10-19T10:30:00+00:00",
-  "source": "sensor.community",
+  "data_available": true,
+  "upstream_ok": true,
   "count": 1,
-  "center": { "lat": 47.4979, "lon": 19.0402 },
-  "bbox": { "min_lat": 47.35, "max_lat": 47.61, "min_lon": 18.92, "max_lon": 19.33 },
+  "area": {
+    "mode": "radius",
+    "center": { "lat": 47.4979, "lon": 19.0402 },
+    "zoom": 13,
+    "radius_km": 5.0
+  },
   "sensors": [
     {
       "sensor_id": 5001,
@@ -101,11 +118,17 @@ Example `GET /api/sensors`:
       "noise_la_max": 71.0,
       "noise_la_min": 55.1,
       "timestamp": "2026-10-19 10:30:00",
-      "indoor": false
+      "indoor": false,
+      "country": "HU",
+      "distance_km": 0.0
     }
   ]
 }
 ```
+
+When no sensors match, `count` is `0` and `sensors` is `[]`. `upstream_ok`
+distinguishes "no sensors in this area" (`true`) from "could not reach the data
+source" (`false`).
 
 ---
 
@@ -118,9 +141,14 @@ All settings are environment variables (see `backend/app/config.py`):
 | `SENSOR_COMMUNITY_URL` | `https://data.sensor.community/static/v2/data.json` | Upstream data source |
 | `POLL_INTERVAL_SECONDS` | `120` | How often the backend polls upstream |
 | `UPSTREAM_TIMEOUT_SECONDS` | `60` | HTTP timeout for the (large) upstream request |
-| `ENABLE_DEMO_FALLBACK` | `true` | Seed demo data when no live sensors are available |
-| `BUDAPEST_MIN_LAT` / `MAX_LAT` / `MIN_LON` / `MAX_LON` | `47.35` / `47.61` / `18.92` / `19.33` | Budapest bounding box |
-| `BUDAPEST_CENTER_LAT` / `LON` | `47.4979` / `19.0402` | Map centre |
+| `NOMINATIM_URL` | `https://nominatim.openstreetmap.org/search` | Geocoding service |
+| `GEOCODER_USER_AGENT` | `noise-monitor/2.0 (public demo)` | User-Agent for geocoding (Nominatim policy) |
+| `DEFAULT_RADIUS_KM` | `5` | Default radius for location queries |
+| `MAX_RADIUS_KM` | `50` | Maximum allowed radius |
+| `DEFAULT_CITY` | `budapest` | City shown on first load |
+
+To add more cities, extend the `CITIES` dict in `backend/app/config.py` with a
+centre, zoom, and bounding box.
 
 ---
 
@@ -142,16 +170,16 @@ All settings are environment variables (see `backend/app/config.py`):
 .
 ├── backend/
 │   ├── app/
-│   │   ├── config.py      # env-driven settings
+│   │   ├── config.py      # env-driven settings + CITIES registry
 │   │   ├── models.py      # pydantic response models
-│   │   ├── collector.py   # upstream polling + Budapest/noise filtering
-│   │   └── main.py        # FastAPI app, API + static hosting
+│   │   ├── collector.py   # upstream polling, noise filtering, bbox/radius helpers
+│   │   └── main.py        # FastAPI app: cities, sensors, geocode, refresh, static
 │   └── requirements.txt
 ├── frontend/
-│   ├── index.html
+│   ├── index.html         # city switcher, location search, radius, overlay
 │   ├── styles.css         # light/dark theming via CSS variables
 │   ├── i18n.js            # EN + HU dictionaries
-│   └── app.js             # Leaflet map, auto-refresh, controls
+│   └── app.js             # Leaflet map, auto-refresh, controls, geocoding
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
@@ -163,5 +191,6 @@ All settings are environment variables (see `backend/app/config.py`):
 
 Noise data is provided by the [Sensor.Community](https://sensor.community)
 citizen‑science network and is licensed under
-[ODbL](https://opendatacommons.org/licenses/odbl/). Map tiles © OpenStreetMap
-contributors.
+[ODbL](https://opendatacommons.org/licenses/odbl/). Geocoding by
+[OpenStreetMap Nominatim](https://nominatim.openstreetmap.org/); map tiles
+© OpenStreetMap contributors.

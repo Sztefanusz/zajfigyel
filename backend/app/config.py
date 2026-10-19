@@ -29,21 +29,76 @@ POLL_INTERVAL_SECONDS = _get_int("POLL_INTERVAL_SECONDS", 120)
 # HTTP timeout for the upstream request (the payload is large).
 UPSTREAM_TIMEOUT_SECONDS = _get_int("UPSTREAM_TIMEOUT_SECONDS", 60)
 
-# Budapest bounding box. Measurements outside this box are ignored.
-# Roughly covers the administrative area of Budapest plus near suburbs.
-BUDAPEST_MIN_LAT = _get_float("BUDAPEST_MIN_LAT", 47.35)
-BUDAPEST_MAX_LAT = _get_float("BUDAPEST_MAX_LAT", 47.61)
-BUDAPEST_MIN_LON = _get_float("BUDAPEST_MIN_LON", 18.92)
-BUDAPEST_MAX_LON = _get_float("BUDAPEST_MAX_LON", 19.33)
+# Geocoding service (OpenStreetMap Nominatim) used to turn a typed location
+# into coordinates. Usage policy requires a descriptive User-Agent.
+NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org/search")
+GEOCODER_USER_AGENT = os.environ.get("GEOCODER_USER_AGENT", "noise-monitor/2.0 (public demo)")
 
-# Map centre used by the frontend.
-BUDAPEST_CENTER_LAT = _get_float("BUDAPEST_CENTER_LAT", 47.4979)
-BUDAPEST_CENTER_LON = _get_float("BUDAPEST_CENTER_LON", 19.0402)
+# Default radius (km) when querying by an arbitrary location.
+DEFAULT_RADIUS_KM = _get_float("DEFAULT_RADIUS_KM", 5.0)
+MAX_RADIUS_KM = _get_float("MAX_RADIUS_KM", 50.0)
 
-# When no live Budapest noise sensors are reachable, fall back to a small
-# synthetic sample so the UI is never empty. Controlled by env var.
-ENABLE_DEMO_FALLBACK = os.environ.get("ENABLE_DEMO_FALLBACK", "true").lower() in (
-    "1",
-    "true",
-    "yes",
-)
+# Default city shown on first load.
+DEFAULT_CITY = os.environ.get("DEFAULT_CITY", "budapest")
+
+
+# Predefined major cities. Each entry: display name, map centre, default zoom,
+# and a bounding box (min_lat, min_lon, max_lat, max_lon) used for filtering.
+CITIES = {
+    "budapest": {
+        "name": "Budapest",
+        "country": "HU",
+        "center": {"lat": 47.4979, "lon": 19.0402},
+        "zoom": 12,
+        "bbox": {"min_lat": 47.35, "min_lon": 18.92, "max_lat": 47.61, "max_lon": 19.33},
+    },
+    "berlin": {
+        "name": "Berlin",
+        "country": "DE",
+        "center": {"lat": 52.5200, "lon": 13.4050},
+        "zoom": 11,
+        "bbox": {"min_lat": 52.34, "min_lon": 13.09, "max_lat": 52.68, "max_lon": 13.76},
+    },
+    "stuttgart": {
+        "name": "Stuttgart",
+        "country": "DE",
+        "center": {"lat": 48.7758, "lon": 9.1829},
+        "zoom": 12,
+        "bbox": {"min_lat": 48.69, "min_lon": 9.04, "max_lat": 48.87, "max_lon": 9.32},
+    },
+    "london": {
+        "name": "London",
+        "country": "GB",
+        "center": {"lat": 51.5074, "lon": -0.1278},
+        "zoom": 11,
+        "bbox": {"min_lat": 51.28, "min_lon": -0.52, "max_lat": 51.70, "max_lon": 0.33},
+    },
+    "paris": {
+        "name": "Paris",
+        "country": "FR",
+        "center": {"lat": 48.8566, "lon": 2.3522},
+        "zoom": 12,
+        "bbox": {"min_lat": 48.78, "min_lon": 2.19, "max_lat": 48.93, "max_lon": 2.52},
+    },
+    "amsterdam": {
+        "name": "Amsterdam",
+        "country": "NL",
+        "center": {"lat": 52.3676, "lon": 4.9041},
+        "zoom": 12,
+        "bbox": {"min_lat": 52.29, "min_lon": 4.73, "max_lat": 52.43, "max_lon": 5.07},
+    },
+    "vienna": {
+        "name": "Vienna",
+        "country": "AT",
+        "center": {"lat": 48.2082, "lon": 16.3738},
+        "zoom": 12,
+        "bbox": {"min_lat": 48.11, "min_lon": 16.18, "max_lat": 48.32, "max_lon": 16.58},
+    },
+    "sofia": {
+        "name": "Sofia",
+        "country": "BG",
+        "center": {"lat": 42.6977, "lon": 23.3219},
+        "zoom": 12,
+        "bbox": {"min_lat": 42.60, "min_lon": 23.19, "max_lat": 42.78, "max_lon": 23.45},
+    },
+}
