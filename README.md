@@ -11,7 +11,8 @@ updates automatically.
 - **Frontend** — a lightweight vanilla‑JS single page using
   [Leaflet](https://leafletjs.com) + OpenStreetMap tiles. Features:
   - 🟢🟡🔴 color‑coded noise markers (dB LAeq) on a map of Budapest
-  - ♻️ **auto‑refreshing** map (no manual reload needed)
+  - 🔥 **heatmap** view toggle (Markers ↔ Heatmap)
+  - ♻️ **auto‑refreshing** map plus a manual **Refresh** button
   - 🌍 **English / Hungarian** language switch
   - 🌙 **Light / Dark** theme toggle
   - 📊 live overview stats (active sensors, average / loudest / quietest)
@@ -77,6 +78,7 @@ Open <http://localhost:8000>.
 | Endpoint        | Description                                             |
 |-----------------|---------------------------------------------------------|
 | `GET /api/sensors` | Current Budapest noise sensors (JSON, see below)     |
+| `POST /api/refresh` | Force an immediate upstream poll, then return the fresh snapshot (same shape as `/api/sensors`). Backs the manual **Refresh** button. |
 | `GET /api/health`  | Health check + sensor count + data source            |
 | `GET /api/config`  | Map centre + poll interval for the frontend          |
 

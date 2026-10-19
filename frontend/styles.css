@@ -96,7 +96,13 @@ body {
 }
 .toggle:hover { filter: brightness(0.97); }
 .lang-btn[aria-pressed="true"] { background: var(--toggle-active); color: var(--toggle-active-text); }
+.view-btn[aria-pressed="true"] { background: var(--toggle-active); color: var(--toggle-active-text); }
 .theme-btn { border-radius: 8px; border: 1px solid var(--panel-border); }
+.refresh-btn { border-radius: 8px; border: 1px solid var(--panel-border); }
+.refresh-btn:disabled { opacity: 0.7; cursor: progress; }
+.refresh-icon { display: inline-block; font-size: 1rem; line-height: 1; }
+.refresh-btn.spinning .refresh-icon { animation: spin 0.8s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .layout { flex: 1; display: flex; min-height: 0; }
 

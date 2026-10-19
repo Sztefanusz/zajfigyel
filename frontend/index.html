@@ -15,6 +15,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
           crossorigin=""></script>
+  <!-- Leaflet.heat (heatmap layer plugin) -->
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -31,6 +33,18 @@
         <span id="updated-at">—</span>
         <span class="source-badge" id="source-badge"></span>
       </div>
+
+      <div class="toggle-group" role="group" aria-label="View mode">
+        <button class="toggle view-btn" data-view="markers" aria-pressed="true"
+                data-i18n="viewMarkers">Markers</button>
+        <button class="toggle view-btn" data-view="heatmap" aria-pressed="false"
+                data-i18n="viewHeatmap">Heatmap</button>
+      </div>
+
+      <button class="toggle refresh-btn" id="refresh-btn" aria-label="Refresh data">
+        <span class="refresh-icon" id="refresh-icon" aria-hidden="true">⟳</span>
+        <span data-i18n="refresh" id="refresh-label">Refresh</span>
+      </button>
 
       <div class="toggle-group" role="group" aria-label="Language">
         <button class="toggle lang-btn" data-lang="en" aria-pressed="true">EN</button>

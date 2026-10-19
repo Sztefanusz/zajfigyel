@@ -89,6 +89,27 @@ async def get_config():
     }
 
 
+@app.post("/api/refresh", response_model=SensorsResponse)
+async def refresh():
+    """Force an immediate poll of the upstream source, then return the fresh
+    snapshot. Backs the manual "Refresh" button in the UI."""
+    await collector.fetch_once()
+    sensors, updated_at, source = await collector.store.get()
+    return SensorsResponse(
+        updated_at=updated_at,
+        source=source,
+        count=len(sensors),
+        center={"lat": config.BUDAPEST_CENTER_LAT, "lon": config.BUDAPEST_CENTER_LON},
+        bbox={
+            "min_lat": config.BUDAPEST_MIN_LAT,
+            "max_lat": config.BUDAPEST_MAX_LAT,
+            "min_lon": config.BUDAPEST_MIN_LON,
+            "max_lon": config.BUDAPEST_MAX_LON,
+        },
+        sensors=sensors,
+    )
+
+
 # Serve the static frontend at the root. Must be mounted last so /api/* wins.
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -21,13 +21,18 @@
   const STORAGE_LANG = "noise.lang";
   const STORAGE_THEME = "noise.theme";
 
+  const STORAGE_VIEW = "noise.view";
+
   let lang = localStorage.getItem(STORAGE_LANG) || detectLang();
   let theme = localStorage.getItem(STORAGE_THEME) || detectTheme();
+  let view = localStorage.getItem(STORAGE_VIEW) || "markers"; // "markers" | "heatmap"
   let pollTimer = null;
   let pollInterval = 120000; // overwritten by /api/config
   let map = null;
   let markerLayer = null;
+  let heatLayer = null;
   let lastData = null;
+  let isRefreshing = false;
 
   function detectLang() {
     const n = (navigator.language || "en").toLowerCase();
@@ -99,7 +104,45 @@
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(map);
-    markerLayer = L.layerGroup().addTo(map);
+    markerLayer = L.layerGroup();
+    heatLayer = L.heatLayer([], {
+      radius: 38,
+      blur: 28,
+      maxZoom: 15,
+      minOpacity: 0.35,
+      // Gradient aligned with the noise color scale (quiet → very loud).
+      gradient: {
+        0.0: "#2ecc71",
+        0.35: "#a3d900",
+        0.55: "#f1c40f",
+        0.75: "#e67e22",
+        1.0: "#e74c3c",
+      },
+    });
+    applyViewLayer();
+  }
+
+  // Swap which layer is on the map based on the current view mode.
+  function applyViewLayer() {
+    if (!map) return;
+    if (view === "heatmap") {
+      if (markerLayer && map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
+      if (heatLayer && !map.hasLayer(heatLayer)) heatLayer.addTo(map);
+    } else {
+      if (heatLayer && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+      if (markerLayer && !map.hasLayer(markerLayer)) markerLayer.addTo(map);
+    }
+    document.querySelectorAll(".view-btn").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.view === view));
+    });
+  }
+
+  // Map a dB value to a 0..1 intensity for the heatmap gradient.
+  // 35 dB (very quiet) -> 0, 85 dB (very loud) -> 1.
+  function heatIntensity(db) {
+    if (db == null || isNaN(db)) return 0.4;
+    const clamped = Math.max(35, Math.min(85, db));
+    return (clamped - 35) / 50;
   }
 
   function markerIcon(db) {
@@ -137,12 +180,15 @@
 
     markerLayer.clearLayers();
     const levels = [];
+    const heatPoints = [];
     (data.sensors || []).forEach((s) => {
       const m = L.marker([s.latitude, s.longitude], { icon: markerIcon(s.noise_laeq) });
       m.bindPopup(popupHtml(s));
       m.addTo(markerLayer);
+      heatPoints.push([s.latitude, s.longitude, heatIntensity(s.noise_laeq)]);
       if (s.noise_laeq != null && !isNaN(s.noise_laeq)) levels.push(s.noise_laeq);
     });
+    if (heatLayer) heatLayer.setLatLngs(heatPoints);
 
     // Stats
     document.getElementById("stat-count").textContent = data.count ?? (data.sensors || []).length;
@@ -187,6 +233,34 @@
     }
   }
 
+  // Manual refresh: ask the backend to poll upstream right now, then render.
+  async function manualRefresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    const btn = document.getElementById("refresh-btn");
+    const label = document.getElementById("refresh-label");
+    const prevLabel = label.textContent;
+    btn.classList.add("spinning");
+    btn.disabled = true;
+    label.textContent = t("refreshing");
+    try {
+      const resp = await fetch("api/refresh", { method: "POST", cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      render(data);
+      // Restart the auto-poll timer so the next tick is a full interval away.
+      startPolling();
+    } catch (err) {
+      console.error("Manual refresh failed", err);
+      document.getElementById("updated-at").textContent = t("loadError");
+    } finally {
+      isRefreshing = false;
+      btn.classList.remove("spinning");
+      btn.disabled = false;
+      label.textContent = t("refresh");
+    }
+  }
+
   async function loadConfig() {
     try {
       const resp = await fetch("api/config", { cache: "no-store" });
@@ -219,6 +293,14 @@
       theme = theme === "dark" ? "light" : "dark";
       localStorage.setItem(STORAGE_THEME, theme);
       applyTheme();
+    });
+    document.getElementById("refresh-btn").addEventListener("click", manualRefresh);
+    document.querySelectorAll(".view-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        view = b.dataset.view;
+        localStorage.setItem(STORAGE_VIEW, view);
+        applyViewLayer();
+      });
     });
     // Refresh when the tab becomes visible again.
     document.addEventListener("visibilitychange", () => {
