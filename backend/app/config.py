@@ -41,6 +41,49 @@ MAX_RADIUS_KM = _get_float("MAX_RADIUS_KM", 50.0)
 # Default city shown on first load.
 DEFAULT_CITY = os.environ.get("DEFAULT_CITY", "budapest")
 
+# --------------------------------------------------------------------------- #
+# Historical database + background aggregation loop
+# --------------------------------------------------------------------------- #
+# Path to the SQLite database file holding historical readings and events.
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "noise.db"))
+
+# How often (seconds) the history/events loop runs. Default: 10 minutes.
+HISTORY_INTERVAL_SECONDS = _get_int("HISTORY_INTERVAL_SECONDS", 600)
+
+# How many days of history to retain (older rows are pruned).
+HISTORY_RETENTION_DAYS = _get_int("HISTORY_RETENTION_DAYS", 30)
+
+# How far back / forward the prediction series spans, in hours.
+PAST_WINDOW_HOURS = _get_int("PAST_WINDOW_HOURS", 24)
+FUTURE_WINDOW_HOURS = _get_int("FUTURE_WINDOW_HOURS", 24)
+
+# Keywords that mark a news headline as a potential "big event" that could
+# raise local noise, with a rough impact weight (dB bump) per category.
+EVENT_KEYWORDS = {
+    "concert": 6.0, "festival": 6.0, "gig": 5.0, "live music": 5.0,
+    "match": 5.0, "derby": 5.0, "final": 5.0, "stadium": 5.0, "game": 4.0,
+    "protest": 5.5, "demonstration": 5.5, "rally": 5.0, "march": 4.5, "strike": 4.0,
+    "parade": 5.0, "fireworks": 7.0, "carnival": 6.0, "marathon": 4.0,
+    "roadworks": 3.5, "construction": 3.0, "closure": 2.5,
+    "fair": 4.0, "celebration": 4.5, "new year": 7.0,
+}
+
+# Per-city local news RSS feeds (no API key required). These are public feeds
+# from local/regional outlets. If a feed is unreachable it is simply skipped.
+CITY_NEWS_FEEDS = {
+    "budapest": ["https://telex.hu/rss", "https://24.hu/feed/"],
+    "berlin": ["https://www.berlin.de/aktuelles/rss.xml", "https://www.rbb24.de/index.xml"],
+    "stuttgart": ["https://www.stuttgarter-zeitung.de/news.rss.feed"],
+    "london": ["https://www.standard.co.uk/rss", "https://www.mylondon.news/?service=rss"],
+    "paris": ["https://www.leparisien.fr/paris-75/rss.xml"],
+    "amsterdam": ["https://www.at5.nl/rss"],
+    "vienna": ["https://www.wienerzeitung.at/_em_daten/rss/feed.xml"],
+    "sofia": ["https://www.novinite.com/services/news_rdf.php"],
+}
+
+# User-Agent used when fetching RSS feeds.
+NEWS_USER_AGENT = os.environ.get("NEWS_USER_AGENT", "noise-monitor/3.0 (public demo)")
+
 
 # Predefined major cities. Each entry: display name, map centre, default zoom,
 # and a bounding box (min_lat, min_lon, max_lat, max_lon) used for filtering.

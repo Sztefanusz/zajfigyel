@@ -8,20 +8,49 @@ updates automatically.
 - **Backend** — Python / FastAPI service that polls the public
   [Sensor.Community](https://sensor.community) network, keeps every worldwide
   noise sensor reading in memory, and filters it per request by either a city
-  bounding box or a location + radius. It also geocodes free-text locations and
-  serves the frontend.
+  bounding box or a location + radius. It also geocodes free-text locations,
+  records per-city history + local events into SQLite on a 10‑minute loop,
+  trains an event-aware noise-prediction model, and serves the frontend.
 - **Frontend** — a lightweight vanilla‑JS single page using
   [Leaflet](https://leafletjs.com) + OpenStreetMap tiles. Features:
   - 🏙️ **major city switcher** (Budapest, Berlin, Stuttgart, London, Paris, Amsterdam, Vienna, Sofia), each annotated with its **live sensor count** so you can see at a glance which cities have data right now
   - 🔎 **location search** — type any place and see sensors within a radius you control
   - 🟢🟡🔴 color‑coded noise markers (dB LAeq)
   - 🔥 **heatmap** view toggle (Markers ↔ Heatmap)
+  - ⏳ **time-travel slider** — scrub through past measurements and future
+    predictions on a mini chart; predictions react to detected local events
   - ♻️ **auto‑refreshing** map plus a manual **Refresh** button
+  - ℹ️ **Sources & Model** modal — lists every data source and plainly
+    explains how the prediction model works
   - 🚫 honest **"No data available"** state — the app never fabricates data
   - 🌍 **English / Hungarian** language switch
   - 🌙 **Light / Dark** theme toggle
   - 📊 live overview stats (active sensors, average / loudest / quietest)
-- **Docker** — one image runs the whole thing.
+- **Docker** — one image runs the whole thing (with a volume for the history DB).
+
+---
+
+## Background loops, history & predictions
+
+Two loops run continuously on the server:
+
+1. **Live poll** (every `POLL_INTERVAL_SECONDS`, default 2 min) keeps the map's
+   worldwide sensor snapshot fresh.
+2. **History + events** (every `HISTORY_INTERVAL_SECONDS`, default **10 min**):
+   - aggregates per-city noise (avg/min/max LAeq + sensor count) and stores one
+     row per city in a lightweight **SQLite** database (`readings` table);
+   - fetches each city's **local news RSS feeds**, scans headlines for keywords
+     that typically raise noise (concert, festival, match, protest, fireworks,
+     roadworks, …) and stores detected **events** (`events` table);
+   - prunes data older than `HISTORY_RETENTION_DAYS`.
+
+**Prediction model** (`backend/app/ml.py`): a per-city, ridge-regularised
+**linear regression** over cyclical time-of-day features (sine/cosine at daily
+and half-daily periods) plus a weekend flag — giving a smooth noise baseline for
+any time. Detected local **events** add a decaying dB bump around when they
+happen. Past points on the slider show real measurements; future points show the
+model's prediction. The model is deliberately simple and interpretable (numpy
+only), which is why the **Sources & Model** modal can explain it honestly.
 
 ---
 
@@ -91,8 +120,12 @@ Open <http://localhost:8000>.
 | `GET /api/sensors?lat=<>&lon=<>&radius_km=<>` | Noise sensors within a radius of a point |
 | `POST /api/refresh?...` | Force an immediate upstream poll, then return the filtered snapshot (same query params as `/api/sensors`) |
 | `GET /api/geocode?q=<text>` | Geocode a free-text location via OpenStreetMap Nominatim |
+| `GET /api/predict?city=<id>&past_hours=<>&future_hours=<>` | Combined past (measured) + future (predicted) noise series for a city, plus model metadata and the events used |
+| `GET /api/events?city=<id>&hours=<>` | Recently detected local-news events for a city |
+| `GET /api/sources` | Transparency: every data source the site fetches + a plain explanation of the prediction model |
+| `GET /api/history_status` | Row counts in the history DB + loop interval |
 | `GET /api/health` | Health check + worldwide sensor count + upstream status |
-| `GET /api/config` | Default city, default/max radius, poll interval |
+| `GET /api/config` | Default city, default/max radius, poll interval, past/future windows |
 
 Example `GET /api/sensors?lat=47.4979&lon=19.0402&radius_km=5`:
 
@@ -146,6 +179,11 @@ All settings are environment variables (see `backend/app/config.py`):
 | `DEFAULT_RADIUS_KM` | `5` | Default radius for location queries |
 | `MAX_RADIUS_KM` | `50` | Maximum allowed radius |
 | `DEFAULT_CITY` | `budapest` | City shown on first load (the bundled `docker-compose.yml` overrides this to `berlin`, which usually has the most active sensors, so the map is populated out of the box) |
+| `HISTORY_INTERVAL_SECONDS` | `600` | How often the history + events loop runs (10 min) |
+| `HISTORY_RETENTION_DAYS` | `30` | Days of history/events kept before pruning |
+| `PAST_WINDOW_HOURS` / `FUTURE_WINDOW_HOURS` | `24` / `24` | Span of the time-travel slider |
+| `DB_PATH` | `backend/data/noise.db` | SQLite history database path (a Docker volume persists it) |
+| `NEWS_USER_AGENT` | `noise-monitor/3.0 (public demo)` | User-Agent for fetching news RSS feeds |
 
 The frontend shows the city on first load based on `DEFAULT_CITY` (via
 `/api/config`), unless you've previously selected a different area — your choice
@@ -176,10 +214,14 @@ centre, zoom, and bounding box.
 .
 ├── backend/
 │   ├── app/
-│   │   ├── config.py      # env-driven settings + CITIES registry
+│   │   ├── config.py      # env-driven settings + CITIES + news feeds + ML config
 │   │   ├── models.py      # pydantic response models
 │   │   ├── collector.py   # upstream polling, noise filtering, bbox/radius helpers
-│   │   └── main.py        # FastAPI app: cities, sensors, geocode, refresh, static
+│   │   ├── database.py    # lightweight SQLite history + events store
+│   │   ├── news.py        # local-news RSS fetching + event keyword detection
+│   │   ├── ml.py          # event-aware ridge-regression noise prediction
+│   │   ├── history.py     # 10-min loop: aggregate history + detect events
+│   │   └── main.py        # FastAPI app: sensors, geocode, predict, events, sources, static
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html         # city switcher, location search, radius, overlay

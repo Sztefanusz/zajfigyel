@@ -42,6 +42,12 @@
   let isRefreshing = false;
   let cities = [];
 
+  // Timeline (time-travel) state.
+  let pastHours = 24;
+  let futureHours = 24;
+  let tlSeries = null; // { now, model, points: [...] }
+  let tlNowIndex = 0;
+
   function loadQuery() {
     try {
       const raw = localStorage.getItem(STORAGE_QUERY);
@@ -92,12 +98,18 @@
     renderLegend();
     if (cities.length) updateCityHint();
     if (lastData) render(lastData);
+    if (tlSeries) {
+      drawTimeline();
+      updateTimelineReadout(Number(document.getElementById("tl-slider").value));
+    }
   }
 
   // ---- Theme ------------------------------------------------------------
   function applyTheme() {
     document.documentElement.setAttribute("data-theme", theme);
     updateThemeLabel();
+    // Canvas colors come from CSS vars, so redraw after a theme switch.
+    if (typeof drawTimeline === "function") drawTimeline();
   }
   function updateThemeLabel() {
     const icon = document.getElementById("theme-icon");
@@ -376,6 +388,8 @@
         if (cfg.default_radius_km) defaultRadius = cfg.default_radius_km;
         if (cfg.max_radius_km) maxRadius = cfg.max_radius_km;
         if (cfg.default_city) defaultCity = cfg.default_city;
+        if (cfg.past_window_hours) pastHours = cfg.past_window_hours;
+        if (cfg.future_window_hours) futureHours = cfg.future_window_hours;
         return cfg;
       }
     } catch (_) {}
@@ -436,6 +450,7 @@
     pollTimer = setInterval(() => {
       fetchSensors();
       loadCities(); // keep the per-city sensor counts fresh
+      loadTimeline(); // refresh predictions as new history lands
     }, uiInterval);
   }
 
@@ -457,6 +472,7 @@
     updateRadiusUI();
     clearGeoResults();
     await fetchSensors({ recenter: true });
+    loadTimeline();
   }
 
   async function selectLocation(lat, lon, label) {
@@ -471,6 +487,7 @@
     updateRadiusUI();
     clearGeoResults();
     await fetchSensors({ recenter: true });
+    loadTimeline(); // will show the "pick a city" note for radius mode
   }
 
   function clearGeoResults() {
@@ -524,6 +541,260 @@
     }
   }
 
+  // ---- Timeline (time travel: past data ↔ future predictions) -----------
+  function currentCityForTimeline() {
+    // Timeline is city-scoped; radius mode has no city history.
+    return query && query.mode === "city" ? query.city : null;
+  }
+
+  async function loadTimeline() {
+    const note = document.getElementById("tl-note");
+    const city = currentCityForTimeline();
+    if (!city) {
+      tlSeries = null;
+      drawTimeline();
+      note.textContent = t("tlNoteRadius");
+      return;
+    }
+    try {
+      const resp = await fetch(
+        "api/predict?city=" + encodeURIComponent(city) +
+          "&past_hours=" + pastHours + "&future_hours=" + futureHours,
+        { cache: "no-store" }
+      );
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      tlSeries = await resp.json();
+      // Index of the point nearest "now" — the boundary of past/future.
+      tlNowIndex = tlSeries.points.findIndex((p) => p.kind !== "actual" && p.kind !== "estimated");
+      if (tlNowIndex < 0) tlNowIndex = tlSeries.points.length - 1;
+      const slider = document.getElementById("tl-slider");
+      slider.max = String(Math.max(0, tlSeries.points.length - 1));
+      slider.value = String(tlNowIndex);
+      drawTimeline();
+      updateTimelineReadout(tlNowIndex);
+
+      const name = (tlSeries.city_name || city);
+      const hasHistory = (tlSeries.history_points || 0) > 2;
+      note.textContent = hasHistory
+        ? t("tlNoteCity").replace("{city}", name)
+        : t("tlNoHistory");
+    } catch (err) {
+      console.error("Timeline load failed", err);
+      tlSeries = null;
+      drawTimeline();
+    }
+  }
+
+  function kindClass(kind) {
+    if (kind === "actual") return "actual";
+    if (kind === "predicted") return "predicted";
+    return "estimated";
+  }
+  function kindLabel(kind) {
+    if (kind === "actual") return t("tlPast");
+    if (kind === "predicted") return t("tlPredicted");
+    return t("tlEstimated");
+  }
+
+  function fmtClock(iso) {
+    const d = new Date(iso);
+    return d.toLocaleString(lang === "hu" ? "hu-HU" : "en-GB", {
+      weekday: "short", hour: "2-digit", minute: "2-digit",
+    });
+  }
+
+  function updateTimelineReadout(idx) {
+    if (!tlSeries || !tlSeries.points.length) {
+      document.getElementById("tl-time").textContent = "—";
+      document.getElementById("tl-value").textContent = "—";
+      document.getElementById("tl-kind").textContent = "—";
+      document.getElementById("tl-kind").className = "tl-kind-badge";
+      return;
+    }
+    const p = tlSeries.points[Math.max(0, Math.min(idx, tlSeries.points.length - 1))];
+    document.getElementById("tl-time").textContent = fmtClock(p.ts);
+    document.getElementById("tl-value").textContent = p.value.toFixed(1) + " dB";
+    const badge = document.getElementById("tl-kind");
+    badge.textContent = kindLabel(p.kind) + (p.event_bump > 0 ? " · +" + p.event_bump + " dB" : "");
+    badge.className = "tl-kind-badge " + kindClass(p.kind);
+    drawTimeline(idx); // redraw to move the cursor line
+  }
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function drawTimeline(cursorIdx) {
+    const canvas = document.getElementById("tl-chart");
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || canvas.parentElement.clientWidth || 600;
+    const cssH = 120;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    if (!tlSeries || !tlSeries.points.length) {
+      ctx.fillStyle = cssVar("--text-muted");
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("—", cssW / 2, cssH / 2);
+      return;
+    }
+
+    const pts = tlSeries.points;
+    const pad = { l: 34, r: 8, t: 10, b: 16 };
+    const w = cssW - pad.l - pad.r;
+    const h = cssH - pad.t - pad.b;
+
+    const values = pts.map((p) => p.value);
+    let vmin = Math.min.apply(null, values);
+    let vmax = Math.max.apply(null, values);
+    if (vmax - vmin < 8) { const m = (vmin + vmax) / 2; vmin = m - 5; vmax = m + 5; }
+    vmin = Math.floor(vmin - 1); vmax = Math.ceil(vmax + 1);
+
+    const x = (i) => pad.l + (w * i) / Math.max(1, pts.length - 1);
+    const y = (v) => pad.t + h - (h * (v - vmin)) / (vmax - vmin);
+
+    // Y gridlines + labels
+    ctx.strokeStyle = cssVar("--panel-border");
+    ctx.fillStyle = cssVar("--text-muted");
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textAlign = "right";
+    ctx.lineWidth = 1;
+    const ticks = 3;
+    for (let i = 0; i <= ticks; i++) {
+      const v = vmin + ((vmax - vmin) * i) / ticks;
+      const yy = y(v);
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(cssW - pad.r, yy); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillText(Math.round(v), pad.l - 4, yy + 3);
+    }
+
+    // "Now" divider
+    const nowX = x(tlNowIndex);
+    ctx.strokeStyle = cssVar("--accent");
+    ctx.globalAlpha = 0.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(nowX, pad.t); ctx.lineTo(nowX, pad.t + h); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    // Shade future region faintly
+    ctx.fillStyle = cssVar("--accent");
+    ctx.globalAlpha = 0.05;
+    ctx.fillRect(nowX, pad.t, pad.l + w - nowX, h);
+    ctx.globalAlpha = 1;
+
+    // Line: solid for past, dashed for future
+    function strokeSegment(fromI, toI, dashed, color) {
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash(dashed ? [5, 4] : []);
+      for (let i = fromI; i <= toI; i++) {
+        const px = x(i), py = y(pts[i].value);
+        if (i === fromI) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    const pastColor = cssVar("--accent") || "#2563eb";
+    const futColor = "#6366f1";
+    strokeSegment(0, tlNowIndex, false, pastColor);
+    strokeSegment(tlNowIndex, pts.length - 1, true, futColor);
+
+    // Event markers (points with a bump)
+    pts.forEach((p, i) => {
+      if (p.event_bump > 0 && (i === 0 || pts[i - 1].event_bump === 0)) {
+        ctx.fillStyle = "#e67e22";
+        ctx.beginPath();
+        ctx.arc(x(i), pad.t + 4, 3, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    });
+
+    // Cursor
+    const ci = cursorIdx == null ? Number(document.getElementById("tl-slider").value) : cursorIdx;
+    const cx = x(ci), cv = pts[ci] ? pts[ci].value : vmin;
+    ctx.fillStyle = cssVar("--text");
+    ctx.beginPath();
+    ctx.arc(cx, y(cv), 4, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = cssVar("--panel");
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Axis labels
+    document.getElementById("tl-start").textContent = fmtClock(pts[0].ts);
+    document.getElementById("tl-end").textContent = fmtClock(pts[pts.length - 1].ts);
+  }
+
+  // ---- Sources & Model modal --------------------------------------------
+  function openModal() {
+    const backdrop = document.getElementById("modal-backdrop");
+    backdrop.hidden = false;
+    loadSources();
+  }
+  function closeModal() {
+    document.getElementById("modal-backdrop").hidden = true;
+  }
+
+  async function loadSources() {
+    const body = document.getElementById("modal-body");
+    body.innerHTML = '<p class="loading">' + t("loading") + "</p>";
+    try {
+      const resp = await fetch("api/sources", { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      renderSources(data);
+    } catch (err) {
+      console.error("Sources load failed", err);
+      body.innerHTML = '<p class="loading">' + t("loadError") + "</p>";
+    }
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function renderSources(data) {
+    const body = document.getElementById("modal-body");
+    let html = "<h3>" + t("modalSourcesH") + "</h3>";
+    (data.data_sources || []).forEach((s) => {
+      html += '<div class="source-card">';
+      html += '<div class="sc-top"><span class="sc-name">' + esc(s.name) +
+              '</span><span class="sc-kind">' + esc(s.kind) + "</span></div>";
+      html += "<p>" + esc(s.description) + "</p>";
+      if (s.url) html += '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.url) + "</a>";
+      if (s.license) html += '<div class="sc-meta">' + t("modalLicense") + ": " + esc(s.license) + "</div>";
+      if (s.feeds && s.feeds.length) {
+        html += '<div class="sc-meta">' + t("modalFeeds") + ':</div><ul class="feeds-list">';
+        s.feeds.forEach((f) => { html += "<li>" + esc(f) + "</li>"; });
+        html += "</ul>";
+      }
+      html += "</div>";
+    });
+
+    const m = data.model || {};
+    html += "<h3>" + t("modalModelH") + "</h3><div class=\"model-box\">";
+    html += "<p><strong>" + esc(m.name) + "</strong></p>";
+    html += "<p>" + esc(m.summary) + "</p>";
+    if (m.features && m.features.length) {
+      html += "<p><strong>" + t("modalFeaturesH") + ":</strong></p><ul>";
+      m.features.forEach((f) => { html += "<li>" + esc(f) + "</li>"; });
+      html += "</ul>";
+    }
+    if (m.why) html += '<p class="why">' + esc(m.why) + "</p>";
+    if (m.updated_every) html += '<span class="meta-chip">' + t("modalUpdated") + ": " + esc(m.updated_every) + "</span>";
+    html += "</div>";
+    body.innerHTML = html;
+  }
+
   // ---- Event wiring -----------------------------------------------------
   function wireControls() {
     document.querySelectorAll(".lang-btn").forEach((b) => {
@@ -551,6 +822,22 @@
       selectCity(e.target.value);
     });
     document.getElementById("search-form").addEventListener("submit", doSearch);
+
+    // Sources & Model modal
+    document.getElementById("sources-btn").addEventListener("click", openModal);
+    document.getElementById("modal-close").addEventListener("click", closeModal);
+    document.getElementById("modal-backdrop").addEventListener("click", (e) => {
+      if (e.target.id === "modal-backdrop") closeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeModal();
+    });
+
+    // Timeline slider scrubbing
+    document.getElementById("tl-slider").addEventListener("input", (e) => {
+      updateTimelineReadout(Number(e.target.value));
+    });
+    window.addEventListener("resize", () => drawTimeline());
 
     const range = document.getElementById("radius-range");
     range.addEventListener("input", (e) => {
@@ -580,6 +867,7 @@
     await loadCities();
     updateRadiusUI();
     await fetchSensors({ recenter: true });
+    loadTimeline();
     startPolling();
   }
 

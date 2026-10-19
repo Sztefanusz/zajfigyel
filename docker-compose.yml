@@ -15,6 +15,20 @@ services:
       # Default / maximum radius (km) for location searches.
       DEFAULT_RADIUS_KM: "5"
       MAX_RADIUS_KM: "50"
-      # Identify this app to the geocoder (OpenStreetMap Nominatim policy).
-      GEOCODER_USER_AGENT: "noise-monitor/2.0 (self-hosted)"
+      # Identify this app to external services (Nominatim / news feeds).
+      GEOCODER_USER_AGENT: "noise-monitor/3.0 (self-hosted)"
+      NEWS_USER_AGENT: "noise-monitor/3.0 (self-hosted)"
+      # History + prediction loop: records per-city data & events this often.
+      HISTORY_INTERVAL_SECONDS: "600"
+      HISTORY_RETENTION_DAYS: "30"
+      # Past/future span (hours) of the time-travel slider.
+      PAST_WINDOW_HOURS: "24"
+      FUTURE_WINDOW_HOURS: "24"
+      # SQLite history DB lives here; persisted via the volume below.
+      DB_PATH: "/app/data/noise.db"
+    volumes:
+      - noise-data:/app/data
     restart: unless-stopped
+
+volumes:
+  noise-data:

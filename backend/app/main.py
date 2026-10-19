@@ -13,7 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import collector, config
+from datetime import datetime, timedelta, timezone
+
+from . import collector, config, database, history, ml
 from .models import Area, City, GeocodeResult, SensorsResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -28,18 +30,27 @@ FRONTEND_DIR = os.environ.get(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
-    task = asyncio.create_task(collector.poll_loop(stop_event))
-    logger.info("Started noise collector (poll interval %ss)", config.POLL_INTERVAL_SECONDS)
+    # Ensure DB tables exist before any request (predict/events) can hit them.
+    await asyncio.to_thread(database.init_db)
+    # Fast loop: keep the live map snapshot fresh.
+    poll_task = asyncio.create_task(collector.poll_loop(stop_event))
+    # Slow loop: every ~10 min record per-city history + detect news events.
+    history_task = asyncio.create_task(history.history_loop(stop_event))
+    logger.info(
+        "Started loops (poll %ss, history %ss)",
+        config.POLL_INTERVAL_SECONDS, config.HISTORY_INTERVAL_SECONDS,
+    )
     try:
         yield
     finally:
         stop_event.set()
-        task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
-        logger.info("Stopped noise collector")
+        for task in (poll_task, history_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        logger.info("Stopped background loops")
 
 
 app = FastAPI(
@@ -196,7 +207,122 @@ async def get_config():
         "default_radius_km": config.DEFAULT_RADIUS_KM,
         "max_radius_km": config.MAX_RADIUS_KM,
         "poll_interval_seconds": config.POLL_INTERVAL_SECONDS,
+        "past_window_hours": config.PAST_WINDOW_HOURS,
+        "future_window_hours": config.FUTURE_WINDOW_HOURS,
     }
+
+
+@app.get("/api/events")
+async def get_events(city: str = Query(...), hours: int = Query(48, ge=1, le=720)):
+    """Recent detected local-news events for a city."""
+    city_id = city.lower()
+    if city_id not in config.CITIES:
+        raise HTTPException(status_code=404, detail=f"Unknown city '{city_id}'")
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    events = await asyncio.to_thread(database.get_events, city_id, since)
+    return {"city": city_id, "count": len(events), "events": events}
+
+
+@app.get("/api/predict")
+async def predict(
+    city: str = Query(...),
+    past_hours: Optional[int] = Query(None, ge=1, le=168),
+    future_hours: Optional[int] = Query(None, ge=1, le=168),
+):
+    """Combined past (actual) + future (predicted) noise series for a city.
+
+    The future portion is produced by an event-aware ridge-regression model
+    (see app/ml.py). Past points use the stored measurements where available.
+    """
+    city_id = city.lower()
+    meta = config.CITIES.get(city_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"Unknown city '{city_id}'")
+
+    past = past_hours or config.PAST_WINDOW_HOURS
+    future = future_hours or config.FUTURE_WINDOW_HOURS
+
+    # Load enough history to both train the model and show the past window.
+    train_since = (datetime.now(timezone.utc) - timedelta(days=config.HISTORY_RETENTION_DAYS)).isoformat()
+    readings = await asyncio.to_thread(database.get_readings, city_id, train_since)
+    events_since = (datetime.now(timezone.utc) - timedelta(hours=max(past, future) + 12)).isoformat()
+    events = await asyncio.to_thread(database.get_events, city_id, events_since)
+
+    series = await asyncio.to_thread(
+        ml.predict_series, readings, events,
+        past_hours=past, future_hours=future,
+    )
+    series["city"] = city_id
+    series["city_name"] = meta["name"]
+    series["events"] = events
+    series["history_points"] = len(readings)
+    return series
+
+
+@app.get("/api/sources")
+async def get_sources():
+    """Transparency endpoint: everything the site fetches + how the ML works."""
+    news_feeds = sorted({f for feeds in config.CITY_NEWS_FEEDS.values() for f in feeds})
+    return {
+        "data_sources": [
+            {
+                "name": "Sensor.Community",
+                "kind": "Noise sensor network",
+                "url": "https://sensor.community",
+                "endpoint": config.SENSOR_COMMUNITY_URL,
+                "description": "Public citizen-science network of noise/air sensors. We read the 5-minute worldwide snapshot and keep noise sensors.",
+                "license": "ODbL",
+            },
+            {
+                "name": "OpenStreetMap Nominatim",
+                "kind": "Geocoding",
+                "url": "https://nominatim.openstreetmap.org",
+                "endpoint": config.NOMINATIM_URL,
+                "description": "Turns a typed location into coordinates for radius search.",
+                "license": "ODbL",
+            },
+            {
+                "name": "OpenStreetMap tiles",
+                "kind": "Map tiles",
+                "url": "https://www.openstreetmap.org",
+                "endpoint": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "description": "Base map imagery.",
+                "license": "ODbL / CC-BY-SA",
+            },
+            {
+                "name": "Local news RSS feeds",
+                "kind": "Event detection",
+                "url": None,
+                "endpoint": None,
+                "description": "Per-city local news feeds scanned for keywords (concerts, matches, protests, fireworks, roadworks, ...) that typically raise noise.",
+                "license": "Headlines used for keyword detection only.",
+                "feeds": news_feeds,
+            },
+        ],
+        "model": {
+            "name": "Event-aware ridge regression (cyclical time features)",
+            "summary": (
+                "A lightweight linear model is fitted per city on the stored history. "
+                "It learns the daily noise rhythm using sine/cosine time-of-day features "
+                "plus a weekend flag, giving a smooth baseline for any time. On top of that, "
+                "detected local events add a decaying dB bump around when they happen. "
+                "Past points show real measurements; future points show the model's prediction."
+            ),
+            "features": [
+                "Time of day (sine & cosine at daily and half-daily periods)",
+                "Weekend vs. weekday flag",
+                "Local-event impact (decaying bump around event time)",
+            ],
+            "why": "Trains in milliseconds on little data, needs only numpy, and every coefficient is interpretable — suitable for a transparent public dashboard.",
+            "updated_every": f"{config.HISTORY_INTERVAL_SECONDS // 60} minutes",
+        },
+    }
+
+
+@app.get("/api/history_status")
+async def history_status():
+    c = await asyncio.to_thread(database.counts)
+    return {"db": c, "interval_minutes": config.HISTORY_INTERVAL_SECONDS // 60}
 
 
 # Serve the static frontend at the root. Must be mounted last so /api/* wins.

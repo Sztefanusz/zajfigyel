@@ -46,6 +46,11 @@
         <span data-i18n="refresh" id="refresh-label">Refresh</span>
       </button>
 
+      <button class="toggle sources-btn" id="sources-btn" aria-label="Data sources and model">
+        <span aria-hidden="true">ℹ️</span>
+        <span data-i18n="sourcesBtn">Sources &amp; Model</span>
+      </button>
+
       <div class="toggle-group" role="group" aria-label="Language">
         <button class="toggle lang-btn" data-lang="en" aria-pressed="true">EN</button>
         <button class="toggle lang-btn" data-lang="hu" aria-pressed="false">HU</button>
@@ -113,20 +118,56 @@
       </section>
     </aside>
 
-    <div class="map-wrap">
-      <div id="map" aria-label="Map of noise sensors"></div>
-      <!-- Shown when there is no sensor data for the selected area -->
-      <div class="map-overlay" id="no-data-overlay" hidden>
-        <div class="overlay-card">
-          <span class="overlay-icon" aria-hidden="true">📡</span>
-          <p class="overlay-title" id="no-data-title" data-i18n="noDataTitle">No data available</p>
-          <p class="overlay-text" id="no-data-text" data-i18n="noDataText">
-            No public noise sensors are reporting for this area right now.
-          </p>
+    <div class="map-col">
+      <div class="map-wrap">
+        <div id="map" aria-label="Map of noise sensors"></div>
+        <!-- Shown when there is no sensor data for the selected area -->
+        <div class="map-overlay" id="no-data-overlay" hidden>
+          <div class="overlay-card">
+            <span class="overlay-icon" aria-hidden="true">📡</span>
+            <p class="overlay-title" id="no-data-title" data-i18n="noDataTitle">No data available</p>
+            <p class="overlay-text" id="no-data-text" data-i18n="noDataText">
+              No public noise sensors are reporting for this area right now.
+            </p>
+          </div>
         </div>
       </div>
+
+      <!-- Time travel: past readings ↔ future predictions -->
+      <section class="timeline" id="timeline">
+        <div class="timeline-head">
+          <h2 data-i18n="timelineTitle">Noise over time</h2>
+          <div class="timeline-readout">
+            <span class="tl-time" id="tl-time">—</span>
+            <span class="tl-value" id="tl-value">—</span>
+            <span class="tl-kind-badge" id="tl-kind">—</span>
+          </div>
+        </div>
+        <canvas id="tl-chart" class="tl-chart" height="120"></canvas>
+        <input id="tl-slider" class="tl-slider" type="range" min="0" max="0" step="1" value="0"
+               aria-label="Time position" />
+        <div class="timeline-axis">
+          <span id="tl-start">—</span>
+          <span class="tl-now-label" data-i18n="now">now</span>
+          <span id="tl-end">—</span>
+        </div>
+        <p class="timeline-note" id="tl-note"></p>
+      </section>
     </div>
   </main>
+
+  <!-- Sources & Model modal -->
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <h2 id="modal-title" data-i18n="modalTitle">Data sources &amp; how predictions work</h2>
+        <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <p class="loading" data-i18n="loading">Loading…</p>
+      </div>
+    </div>
+  </div>
 
   <script src="i18n.js"></script>
   <script src="app.js"></script>

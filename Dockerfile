@@ -14,7 +14,10 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend ./backend
 COPY frontend ./frontend
 
-ENV FRONTEND_DIR=/app/frontend
+# Persist the SQLite history database here (mount a volume to keep it).
+RUN mkdir -p /app/data
+ENV FRONTEND_DIR=/app/frontend \
+    DB_PATH=/app/data/noise.db
 
 EXPOSE 8000
 

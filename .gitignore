@@ -5,3 +5,9 @@ venv/
 .env
 .DS_Store
 *.log
+
+# SQLite history database (runtime data)
+*.db
+*.db-wal
+*.db-shm
+backend/data/
