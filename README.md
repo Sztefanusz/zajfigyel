@@ -48,9 +48,11 @@ Two loops run continuously on the server:
 **linear regression** over cyclical time-of-day features (sine/cosine at daily
 and half-daily periods) plus a weekend flag — giving a smooth noise baseline for
 any time. Detected local **events** add a decaying dB bump around when they
-happen. Past points on the slider show real measurements; future points show the
-model's prediction. The model is deliberately simple and interpretable (numpy
-only), which is why the **Sources & Model** modal can explain it honestly.
+happen. On the slider's chart the **past is the actual measured readings from
+the database** (plotted at their real timestamps and joined by a simple line —
+no gap filling), while the **future is the model's prediction** (dashed). The
+model is deliberately simple and interpretable (numpy only), which is why the
+**Sources & Model** modal can explain it honestly.
 
 ---
 

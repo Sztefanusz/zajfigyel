@@ -564,14 +564,23 @@
       );
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       tlSeries = await resp.json();
-      // Index of the point nearest "now" — the boundary of past/future.
-      tlNowIndex = tlSeries.points.findIndex((p) => p.kind !== "actual" && p.kind !== "estimated");
-      if (tlNowIndex < 0) tlNowIndex = tlSeries.points.length - 1;
+      // Boundary between past (actual) and future (predicted). The backend
+      // tells us directly; fall back to first non-actual point if missing.
+      tlNowIndex = typeof tlSeries.now_index === "number"
+        ? tlSeries.now_index
+        : tlSeries.points.findIndex((p) => p.kind !== "actual");
+      if (tlNowIndex < 0) tlNowIndex = tlSeries.points.length;
       const slider = document.getElementById("tl-slider");
       slider.max = String(Math.max(0, tlSeries.points.length - 1));
-      slider.value = String(tlNowIndex);
+      // Start the cursor at the last actual reading ("now") when we have past
+      // data, otherwise at the first predicted point.
+      const startIdx = Math.min(
+        Math.max(0, tlNowIndex - (tlNowIndex > 0 ? 1 : 0)),
+        Math.max(0, tlSeries.points.length - 1)
+      );
+      slider.value = String(startIdx);
       drawTimeline();
-      updateTimelineReadout(tlNowIndex);
+      updateTimelineReadout(startIdx);
 
       const name = (tlSeries.city_name || city);
       const hasHistory = (tlSeries.history_points || 0) > 2;
@@ -649,13 +658,20 @@
     const w = cssW - pad.l - pad.r;
     const h = cssH - pad.t - pad.b;
 
+    // X axis is TIME, because past (actual DB) points are not evenly spaced.
+    const times = pts.map((p) => new Date(p.ts).getTime());
+    let tmin = Math.min.apply(null, times);
+    let tmax = Math.max.apply(null, times);
+    if (tmax === tmin) tmax = tmin + 1;
+
     const values = pts.map((p) => p.value);
     let vmin = Math.min.apply(null, values);
     let vmax = Math.max.apply(null, values);
     if (vmax - vmin < 8) { const m = (vmin + vmax) / 2; vmin = m - 5; vmax = m + 5; }
     vmin = Math.floor(vmin - 1); vmax = Math.ceil(vmax + 1);
 
-    const x = (i) => pad.l + (w * i) / Math.max(1, pts.length - 1);
+    const x = (ms) => pad.l + (w * (ms - tmin)) / (tmax - tmin);
+    const xi = (i) => x(times[i]);
     const y = (v) => pad.t + h - (h * (v - vmin)) / (vmax - vmin);
 
     // Y gridlines + labels
@@ -674,8 +690,9 @@
       ctx.fillText(Math.round(v), pad.l - 4, yy + 3);
     }
 
-    // "Now" divider
-    const nowX = x(tlNowIndex);
+    // "Now" divider, positioned by time.
+    const nowMs = tlSeries.now ? new Date(tlSeries.now).getTime() : times[Math.max(0, tlNowIndex - 1)];
+    const nowX = x(Math.max(tmin, Math.min(tmax, nowMs)));
     ctx.strokeStyle = cssVar("--accent");
     ctx.globalAlpha = 0.5;
     ctx.setLineDash([3, 3]);
@@ -689,37 +706,60 @@
     ctx.fillRect(nowX, pad.t, pad.l + w - nowX, h);
     ctx.globalAlpha = 1;
 
-    // Line: solid for past, dashed for future
-    function strokeSegment(fromI, toI, dashed, color) {
+    // nSplit = number of past (actual) points.
+    const nSplit = tlNowIndex;
+
+    // --- Past: simple solid line connecting the actual DB points ---
+    if (nSplit > 0) {
       ctx.beginPath();
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = cssVar("--accent") || "#2563eb";
       ctx.lineWidth = 2;
-      ctx.setLineDash(dashed ? [5, 4] : []);
-      for (let i = fromI; i <= toI; i++) {
-        const px = x(i), py = y(pts[i].value);
-        if (i === fromI) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      ctx.setLineDash([]);
+      for (let i = 0; i < nSplit; i++) {
+        const px = xi(i), py = y(pts[i].value);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      // Mark each actual measurement with a small dot.
+      ctx.fillStyle = cssVar("--accent") || "#2563eb";
+      for (let i = 0; i < nSplit; i++) {
+        ctx.beginPath();
+        ctx.arc(xi(i), y(pts[i].value), 2.2, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    // --- Future: dashed predicted line, joined to the last actual point ---
+    if (nSplit < pts.length) {
+      ctx.beginPath();
+      ctx.strokeStyle = "#6366f1";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      // Start from the last actual point (if any) so the line is continuous.
+      let startI = nSplit > 0 ? nSplit - 1 : nSplit;
+      for (let i = startI; i < pts.length; i++) {
+        const px = xi(i), py = y(pts[i].value);
+        if (i === startI) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    const pastColor = cssVar("--accent") || "#2563eb";
-    const futColor = "#6366f1";
-    strokeSegment(0, tlNowIndex, false, pastColor);
-    strokeSegment(tlNowIndex, pts.length - 1, true, futColor);
 
-    // Event markers (points with a bump)
+    // Event markers (start of each event-influenced stretch)
     pts.forEach((p, i) => {
       if (p.event_bump > 0 && (i === 0 || pts[i - 1].event_bump === 0)) {
         ctx.fillStyle = "#e67e22";
         ctx.beginPath();
-        ctx.arc(x(i), pad.t + 4, 3, 0, 2 * Math.PI);
+        ctx.arc(xi(i), pad.t + 4, 3, 0, 2 * Math.PI);
         ctx.fill();
       }
     });
 
     // Cursor
     const ci = cursorIdx == null ? Number(document.getElementById("tl-slider").value) : cursorIdx;
-    const cx = x(ci), cv = pts[ci] ? pts[ci].value : vmin;
+    const cIdx = Math.max(0, Math.min(ci, pts.length - 1));
+    const cx = xi(cIdx), cv = pts[cIdx] ? pts[cIdx].value : vmin;
     ctx.fillStyle = cssVar("--text");
     ctx.beginPath();
     ctx.arc(cx, y(cv), 4, 0, 2 * Math.PI);

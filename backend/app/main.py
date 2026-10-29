@@ -233,8 +233,10 @@ async def predict(
 ):
     """Combined past (actual) + future (predicted) noise series for a city.
 
-    The future portion is produced by an event-aware ridge-regression model
-    (see app/ml.py). Past points use the stored measurements where available.
+    The past portion is the actual measured readings from the database (one
+    point per stored reading, at its real timestamp — no gap filling). The
+    future portion is produced by an event-aware ridge-regression model
+    (see app/ml.py). The `now_index` field marks where the future begins.
     """
     city_id = city.lower()
     meta = config.CITIES.get(city_id)

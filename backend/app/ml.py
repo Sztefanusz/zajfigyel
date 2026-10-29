@@ -134,51 +134,62 @@ def predict_series(
     future_hours: int,
     step_minutes: int = 30,
 ) -> Dict:
-    """Build a combined past (actual) + future (predicted) time series.
+    """Build a combined past + future time series.
 
-    Returns a dict with the fitted-model metadata and a list of points:
-        { ts, kind: "actual"|"predicted", value, baseline, event_bump }
-    Past points carry the measured average where available (falling back to
-    the model baseline for gaps); future points are model predictions.
+    Past points are the **actual measured readings** from the database (one
+    point per stored reading, at its real timestamp) — no gap filling, no
+    model estimates. They are meant to be connected with a simple line.
+
+    Future points are produced by the event-aware prediction model on a
+    regular `step_minutes` grid.
+
+    Each point: { ts, kind: "actual"|"predicted", value, baseline, event_bump }
+    Because past points use real reading timestamps, the series is NOT evenly
+    spaced; the frontend plots points by time, not by index.
     """
     model = NoiseModel().fit(readings)
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-
-    # Index actual readings by their rounded bucket for quick lookup.
-    actual: Dict[str, float] = {}
-    for r in readings:
-        dt = _parse_ts(r.get("ts", ""))
-        if dt is None or r.get("avg_laeq") is None:
-            continue
-        actual[dt.strftime("%Y-%m-%dT%H:%M")] = float(r["avg_laeq"])
+    past_cutoff = now - timedelta(hours=past_hours)
 
     points = []
-    start = now - timedelta(hours=past_hours)
-    end = now + timedelta(hours=future_hours)
-    t = start
+
+    # --- Past: actual DB readings only, within the window, sorted by time ---
+    past_rows = []
+    for r in readings:
+        dt = _parse_ts(r.get("ts", ""))
+        avg = r.get("avg_laeq")
+        if dt is None or avg is None:
+            continue
+        if past_cutoff <= dt <= now:
+            past_rows.append((dt, float(avg)))
+    past_rows.sort(key=lambda p: p[0])
+
+    for dt, avg in past_rows:
+        points.append(
+            {
+                "ts": dt.isoformat(),
+                "kind": "actual",
+                "value": round(avg, 1),
+                "baseline": round(model.baseline_at(dt), 1),
+                "event_bump": round(event_adjustment(dt, events), 1),
+            }
+        )
+
+    # Index where the future begins (first predicted point), for the frontend.
+    now_index = len(points)
+
+    # --- Future: model predictions on a regular grid ---
     step = timedelta(minutes=step_minutes)
+    t = now + step
+    end = now + timedelta(hours=future_hours)
     while t <= end:
-        is_future = t > now
         baseline = model.baseline_at(t)
         bump = event_adjustment(t, events)
-        key = t.strftime("%Y-%m-%dT%H:%M")
-
-        if not is_future and key in actual:
-            value = actual[key]
-            kind = "actual"
-        elif not is_future:
-            # Past gap with no measurement — show the model's fitted value.
-            value = baseline + bump
-            kind = "estimated"
-        else:
-            value = baseline + bump
-            kind = "predicted"
-
         points.append(
             {
                 "ts": t.isoformat(),
-                "kind": kind,
-                "value": round(value, 1),
+                "kind": "predicted",
+                "value": round(baseline + bump, 1),
                 "baseline": round(baseline, 1),
                 "event_bump": round(bump, 1),
             }
@@ -187,6 +198,9 @@ def predict_series(
 
     return {
         "now": now.isoformat(),
+        "now_index": now_index,
+        "past_count": now_index,
+        "future_count": len(points) - now_index,
         "model": {
             "type": "ridge_linear_cyclical",
             "n_samples": model.n_samples,
